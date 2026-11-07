@@ -1,6 +1,6 @@
 # RC Track Designer
 
-RC Track Designer v0.1.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Fahrbahnmittellinie.
+RC Track Designer v0.1.1 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Fahrbahnmittellinie.
 
 ## Installation und Start
 
@@ -25,6 +25,7 @@ $env:PYTHONPATH = "src"
 - Oben Gerade oder Links-/Rechtskurve wählen und zum Platzieren in die Halle klicken. `Esc` beendet den Platziermodus.
 - Klicken wählt ein Element; Ziehen verschiebt es. Werkzeugleiste oder `Strg+Links`/`Strg+Rechts` dreht um 5°. `Entf` löscht.
 - Fahrbahnbreite, Geradenlänge und Mittellinienradius gelten für neue Elemente und ändern zugleich das ausgewählte Element.
+- Hallenlänge und Hallenbreite sind jederzeit in der Werkzeugleiste änderbar; die Ansicht wird anschließend neu eingepasst.
 - Mausrad zoomt. Mittlere Maustaste oder `Leertaste` + linke Maustaste verschiebt die Ansicht. `F` passt die Halle ein.
 - Projekte werden als versioniertes `*.rct.json` gespeichert und geladen.
 - Unter `Ansicht > Einstellungen` kann zwischen hellem und dunklem Theme sowie Deutsch und Englisch gewechselt werden. Die Auswahl wird gespeichert.
@@ -56,7 +57,7 @@ Eine Sprachdatei hat dieses Format:
 
 Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übersetzungen schrittweise ergänzt werden, ohne den Programmstart zu verhindern.
 
-## Bekannte Einschränkungen in v0.1.0
+## Bekannte Einschränkungen in v0.1.1
 
 - Noch kein magnetisches Einrasten oder automatisches Verbinden.
 - Keine Kollisions-, Hallengrenzen- oder Geschlossenheitsprüfung.

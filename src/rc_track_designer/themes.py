@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
@@ -26,6 +28,10 @@ THEMES = {
 
 def apply_theme(app: QApplication, name: str) -> dict[str, str]:
     colors = THEMES.get(name, THEMES["dark"])
+    asset_variant = "light" if name == "light" else "dark"
+    assets = Path(__file__).with_name("assets")
+    plus_icon = (assets / f"plus_{asset_variant}.svg").as_posix()
+    minus_icon = (assets / f"minus_{asset_variant}.svg").as_posix()
     app.setStyle("Fusion")
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(colors["window"]))
@@ -57,6 +63,14 @@ def apply_theme(app: QApplication, name: str) -> dict[str, str]:
         QToolButton:disabled, QPushButton:disabled {{ background: {colors['panel']}; color: {colors['muted']}; }}
         QWidget#elementPalette QToolButton {{ min-height: 22px; padding: 2px 6px; }}
         QDoubleSpinBox, QComboBox {{ background: {colors['field']}; color: {colors['text']}; border: 1px solid {colors['border']}; border-radius: 3px; padding: 4px; min-height: 22px; }}
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            width: 24px; border-left: 1px solid {colors['border']}; background: {colors['panel']};
+        }}
+        QDoubleSpinBox::up-button {{ border-top-right-radius: 3px; border-bottom: 1px solid {colors['border']}; }}
+        QDoubleSpinBox::down-button {{ border-bottom-right-radius: 3px; }}
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background: {colors['blue_top']}; }}
+        QDoubleSpinBox::up-arrow {{ image: url("{plus_icon}"); width: 12px; height: 12px; }}
+        QDoubleSpinBox::down-arrow {{ image: url("{minus_icon}"); width: 12px; height: 12px; }}
         QStatusBar {{ background: {colors['panel_alt']}; color: {colors['muted']}; border-top: 1px solid {colors['border']}; }}
         QGroupBox {{ font-weight: 600; border: 1px solid {colors['border']}; border-radius: 4px; margin-top: 10px; padding-top: 10px; }}
         QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}

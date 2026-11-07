@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPainterPathStroker, QPen, QWheelEvent
+from PySide6.QtGui import QColor, QFocusEvent, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPainterPathStroker, QPen, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from .model import Point, TrackElement, TrackProject
@@ -27,6 +27,7 @@ class TrackCanvas(QWidget):
         self._last_mouse = QPoint()
         self._dragging_element = False
         self._panning = False
+        self._space_pressed = False
         self._view_fitted = True
         self._colors = {
             "canvas": "#202326", "hall": "#e8e8e4", "grid": "#c9c9c4",
@@ -171,7 +172,7 @@ class TrackCanvas(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self.setFocus()
         self._last_mouse = event.position().toPoint()
-        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.SpaceModifier):
+        if event.button() == Qt.MouseButton.MiddleButton or (event.button() == Qt.MouseButton.LeftButton and self._space_pressed):
             self._panning = True
             self._view_fitted = False
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -217,7 +218,12 @@ class TrackCanvas(QWidget):
             self.setCursor(Qt.CursorShape.CrossCursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Space:
+            self._space_pressed = True
+            if not self._panning:
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+        elif event.key() == Qt.Key.Key_Escape:
             self.cancel_placement()
         elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected()
@@ -225,6 +231,28 @@ class TrackCanvas(QWidget):
             self.rotate_selected(-5 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 5)
         else:
             super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Space:
+            self._space_pressed = False
+            if not self._panning:
+                self.unsetCursor()
+                if self.placement:
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802
+        # Verhindert einen hängenbleibenden Pan-Modus, wenn Alt+Tab oder ein
+        # anderes Fenster den KeyRelease-/MouseRelease-Event übernimmt.
+        self._space_pressed = False
+        self._panning = False
+        self._dragging_element = False
+        self.unsetCursor()
+        if self.placement:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        super().focusOutEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

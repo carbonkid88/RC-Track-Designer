@@ -16,6 +16,7 @@
     "Rotate 5° right": "5° rechts drehen",
     "View": "Ansicht",
     "Fit hall": "Halle einpassen",
+    "Reset zoom and pan so the complete hall is centred in the workspace.": "Setzt Zoom und Verschiebung zurück, sodass die gesamte Halle zentriert im Arbeitsbereich sichtbar ist.",
     "Settings…": "Einstellungen…",
     "Help": "Hilfe",
     "About RC Track Designer": "Über RC Track Designer",
@@ -26,12 +27,15 @@
     "Left curves:": "Linkskurven:",
     "Right curves:": "Rechtskurven:",
     "Element dimensions": "Elementmaße",
+    "Hall dimensions": "Hallenmaße",
     "Track width:": "Fahrbahnbreite:",
     "Straight length:": "Geradenlänge:",
     "Centerline radius:": "Mittellinienradius:",
     "New layout": "Neues Layout",
     "Hall length:": "Hallenlänge:",
     "Hall width:": "Hallenbreite:",
+    "Hall L:": "Halle L:",
+    "Hall W:": "Halle B:",
     "Settings": "Einstellungen",
     "Appearance": "Darstellung",
     "Theme:": "Theme:",
@@ -56,4 +60,3 @@
     "2D layout editor for RC race tracks.\nInternal unit: metres.": "2D-Layouteditor für RC-Rennstrecken.\nInterne Einheit: Meter."
   }
 }
-

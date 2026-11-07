@@ -13,7 +13,7 @@ FORMAT_VERSION = 1
 def save_project(project: TrackProject, path: str | Path) -> None:
     data = {
         "format": "rc-track-designer", "format_version": FORMAT_VERSION,
-        "app_version": "0.1.0",
+        "app_version": "0.1.1",
         "hall": {"length": project.hall_length, "width": project.hall_width},
         "elements": [element.to_dict() for element in project.elements],
     }

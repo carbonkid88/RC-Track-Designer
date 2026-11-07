@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QAbstractSpinBox, QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         self.rotate_left_action = self._action(tr("Rotate 5° left"), lambda: self.canvas.rotate_selected(5), "Ctrl+Left")
         self.rotate_right_action = self._action(tr("Rotate 5° right"), lambda: self.canvas.rotate_selected(-5), "Ctrl+Right")
         self.fit_action = self._action(tr("Fit hall"), self.canvas.fit_to_view, "F")
+        self.fit_action.setIcon(QIcon(str(Path(__file__).with_name("assets") / "fit_view.svg")))
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.about_action = self._action(tr("About RC Track Designer"), self.about)
 
@@ -118,6 +119,8 @@ class MainWindow(QMainWindow):
 
     def _spin(self, value, minimum, maximum, suffix) -> QDoubleSpinBox:
         spin = QDoubleSpinBox(); spin.setRange(minimum, maximum); spin.setValue(value); spin.setSuffix(suffix); spin.setDecimals(2)
+        spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.PlusMinus)
+        spin.setMinimumWidth(105)
         return spin
 
     def _create_toolbars(self) -> None:
@@ -125,7 +128,20 @@ class MainWindow(QMainWindow):
         main = QToolBar(tr("File and editing"), self); main.setMovable(False)
         self.addToolBar(main)
         main.addActions([self.new_action, self.open_action, self.save_action]); main.addSeparator()
-        main.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action, self.fit_action])
+        main.addAction(self.fit_action)
+        self.fit_action.setToolTip(tr("Reset zoom and pan so the complete hall is centred in the workspace."))
+        main.addSeparator()
+        self.hall_length_spin = self._spin(self.canvas.project.hall_length, 1, 1000, " m")
+        self.hall_width_spin = self._spin(self.canvas.project.hall_width, 1, 1000, " m")
+        self.hall_length_spin.setMinimumWidth(90); self.hall_length_spin.setMaximumWidth(100)
+        self.hall_width_spin.setMinimumWidth(90); self.hall_width_spin.setMaximumWidth(100)
+        self.hall_length_label = QLabel(f" {tr('Hall L:')} ")
+        self.hall_width_label = QLabel(f" {tr('Hall W:')} ")
+        main.addWidget(self.hall_length_label); main.addWidget(self.hall_length_spin)
+        main.addWidget(self.hall_width_label); main.addWidget(self.hall_width_spin)
+        self.hall_length_spin.valueChanged.connect(self._hall_length_changed)
+        self.hall_width_spin.valueChanged.connect(self._hall_width_changed)
+        main.addSeparator(); main.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         palette = QToolBar(tr("Element palette"), self); palette.setMovable(False)
         self.addToolBarBreak(); self.addToolBar(palette)
         self.elements_label = QLabel(f" {tr('Elements:')} ")
@@ -182,6 +198,21 @@ class MainWindow(QMainWindow):
         self.canvas.default_radius = value
         if self.canvas.selected: self.canvas.selected.radius = value; self.canvas.project_changed.emit(); self.canvas.update()
 
+    def _hall_length_changed(self, value: float) -> None:
+        self.canvas.project.hall_length = value
+        self.canvas.fit_to_view()
+        self.canvas.project_changed.emit()
+
+    def _hall_width_changed(self, value: float) -> None:
+        self.canvas.project.hall_width = value
+        self.canvas.fit_to_view()
+        self.canvas.project_changed.emit()
+
+    def _sync_hall_controls(self) -> None:
+        for spin, value in ((self.hall_length_spin, self.canvas.project.hall_length),
+                            (self.hall_width_spin, self.canvas.project.hall_width)):
+            spin.blockSignals(True); spin.setValue(value); spin.blockSignals(False)
+
     def _mark_dirty(self) -> None:
         self.dirty = True; self._update_title()
 
@@ -232,6 +263,9 @@ class MainWindow(QMainWindow):
         self.width_label.setText(f" {tr('Track width:')} ")
         self.length_label.setText(f" {tr('Straight length:')} ")
         self.radius_label.setText(f" {tr('Centerline radius:')} ")
+        self.hall_length_label.setText(f" {tr('Hall L:')} ")
+        self.hall_width_label.setText(f" {tr('Hall W:')} ")
+        self.fit_action.setToolTip(tr("Reset zoom and pan so the complete hall is centred in the workspace."))
         self.canvas.set_appearance({}, tr)
         self._update_title()
 
@@ -248,6 +282,7 @@ class MainWindow(QMainWindow):
         dialog = NewProjectDialog(self.tr_text, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.canvas.set_project(TrackProject(dialog.length.value(), dialog.width.value()))
+            self._sync_hall_controls()
             self.current_path = None; self.dirty = False; self._update_title()
 
     def open_project(self) -> None:
@@ -256,7 +291,7 @@ class MainWindow(QMainWindow):
         if not filename: return
         try: project = load_project(filename)
         except Exception as error: QMessageBox.critical(self, self.tr_text("Open failed"), str(error)); return
-        self.canvas.set_project(project); self.current_path = Path(filename); self.dirty = False; self._update_title()
+        self.canvas.set_project(project); self._sync_hall_controls(); self.current_path = Path(filename); self.dirty = False; self._update_title()
 
     def save(self) -> bool:
         return self._save_to(self.current_path) if self.current_path else self.save_as()
