@@ -38,7 +38,23 @@ def test_element_json_roundtrip(kind):
     original = TrackElement(kind, Point(1.25, 9.5), 17, 2.4, 8, 3.2, 25)
     assert TrackElement.from_dict(original.to_dict()) == original
 
+
+@pytest.mark.parametrize("kind", ["straight", "left", "right"])
+def test_rotation_keeps_centerline_midpoint_fixed(kind):
+    element = TrackElement(kind, Point(7, 8), heading_deg=23, radius=4, angle_deg=35)
+    before = element.centerline_midpoint
+    element.rotate(137)
+    after = element.centerline_midpoint
+    assert isclose(after.x, before.x, abs_tol=1e-9)
+    assert isclose(after.y, before.y, abs_tol=1e-9)
+
+
+def test_old_element_without_rotation_reference_uses_loaded_heading():
+    data = TrackElement("left", Point(1, 2), heading_deg=137, angle_deg=35).to_dict()
+    data.pop("rotation_reference_deg")
+    loaded = TrackElement.from_dict(data)
+    assert loaded.rotation_reference_deg == 137
+
 def test_invalid_dimensions_are_rejected():
     with pytest.raises(ValueError): TrackProject(0, 20)
     with pytest.raises(ValueError): TrackElement("straight", Point(0, 0), width=-1)
-

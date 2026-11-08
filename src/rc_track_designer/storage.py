@@ -17,6 +17,7 @@ def save_project(project: TrackProject, path: str | Path) -> None:
         "hall": {"length": project.hall_length, "width": project.hall_width},
         "elements": [element.to_dict() for element in project.elements],
         "connections": [connection.to_dict() for connection in project.connections],
+        "guides": {"x": project.guides_x, "y": project.guides_y},
     }
     Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -27,8 +28,11 @@ def load_project(path: str | Path) -> TrackProject:
     if data.get("format") != "rc-track-designer" or version not in {1, FORMAT_VERSION}:
         raise ValueError("Nicht unterstütztes Projektformat")
     hall = data["hall"]
+    guides = data.get("guides", {})
     return TrackProject(
         float(hall["length"]), float(hall["width"]),
         [TrackElement.from_dict(item) for item in data.get("elements", [])],
         [TrackConnection.from_dict(item) for item in data.get("connections", [])] if version >= 2 else [],
+        [float(value) for value in guides.get("x", [])],
+        [float(value) for value in guides.get("y", [])],
     )

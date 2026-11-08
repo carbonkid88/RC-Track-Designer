@@ -7,6 +7,9 @@ from math import cos, hypot, radians, sin
 from uuid import uuid4
 
 
+MINIMUM_CURVE_INNER_RADIUS = 0.1
+
+
 @dataclass(frozen=True)
 class Point:
     x: float
@@ -61,6 +64,7 @@ class TrackElement:
     radius: float = 5.0
     angle_deg: float = 45.0
     id: str = field(default_factory=lambda: str(uuid4()))
+    rotation_reference_deg: float | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"straight", "left", "right"}:
@@ -69,10 +73,25 @@ class TrackElement:
             raise ValueError("Breite, Länge und Radius müssen positiv sein")
         if not 0 < self.angle_deg <= 360:
             raise ValueError("Kurvenwinkel muss zwischen 0 und 360 Grad liegen")
+        self.heading_deg %= 360
+        if self.rotation_reference_deg is None:
+            self.rotation_reference_deg = self.heading_deg
+        else:
+            self.rotation_reference_deg %= 360
 
     @property
     def signed_angle_deg(self) -> float:
         return self.angle_deg if self.kind == "left" else -self.angle_deg
+
+    @property
+    def minimum_centerline_radius(self) -> float:
+        """Smallest radius that leaves a valid inner road edge."""
+        return self.width / 2 + MINIMUM_CURVE_INNER_RADIUS
+
+    @property
+    def has_valid_road_geometry(self) -> bool:
+        return (self.kind == "straight"
+                or self.radius + 1e-9 >= self.minimum_centerline_radius)
 
     @property
     def end_pose(self) -> Pose:
@@ -103,12 +122,30 @@ class TrackElement:
         if endpoint == "start":
             self.start = target.point
             self.heading_deg = target.heading_deg % 360
+            self.rotation_reference_deg = self.heading_deg
             return
         if endpoint != "end":
             raise ValueError("Endpoint must be 'start' or 'end'")
         self.heading_deg = ((target.heading_deg - self.signed_angle_deg) if self.kind != "straight" else target.heading_deg) % 360
         current = self.end_pose.point
         self.start = Point(self.start.x + target.point.x - current.x, self.start.y + target.point.y - current.y)
+        self.rotation_reference_deg = self.heading_deg
+
+    @property
+    def centerline_midpoint(self) -> Point:
+        if self.kind == "straight":
+            end = self.end_pose.point
+            return Point((self.start.x + end.x) / 2, (self.start.y + end.y) / 2)
+        heading = radians(self.heading_deg)
+        turn = 1 if self.kind == "left" else -1
+        center = Point(
+            self.start.x - turn * self.radius * sin(heading),
+            self.start.y + turn * self.radius * cos(heading),
+        )
+        radial = heading - turn * radians(90)
+        middle_radial = radial + radians(self.signed_angle_deg / 2)
+        return Point(center.x + self.radius * cos(middle_radial),
+                     center.y + self.radius * sin(middle_radial))
 
     def centerline_points(self, maximum_step_deg: float = 5.0) -> list[Point]:
         if self.kind == "straight":
@@ -128,6 +165,13 @@ class TrackElement:
         self.start = Point(self.start.x + dx, self.start.y + dy)
 
     def rotate(self, delta_deg: float) -> None:
+        pivot = self.centerline_midpoint
+        angle = radians(delta_deg)
+        dx, dy = self.start.x - pivot.x, self.start.y - pivot.y
+        self.start = Point(
+            pivot.x + dx * cos(angle) - dy * sin(angle),
+            pivot.y + dx * sin(angle) + dy * cos(angle),
+        )
         self.heading_deg = (self.heading_deg + delta_deg) % 360
 
     def to_dict(self) -> dict:
@@ -136,6 +180,7 @@ class TrackElement:
             "start": {"x": self.start.x, "y": self.start.y},
             "heading_deg": self.heading_deg, "width": self.width,
             "length": self.length, "radius": self.radius, "angle_deg": self.angle_deg,
+            "rotation_reference_deg": self.rotation_reference_deg,
         }
 
     @classmethod
@@ -146,6 +191,8 @@ class TrackElement:
             heading_deg=float(data["heading_deg"]), width=float(data["width"]),
             length=float(data.get("length", 5.0)), radius=float(data.get("radius", 5.0)),
             angle_deg=float(data.get("angle_deg", 45.0)),
+            rotation_reference_deg=(float(data["rotation_reference_deg"])
+                                    if data.get("rotation_reference_deg") is not None else None),
         )
 
 
@@ -155,10 +202,16 @@ class TrackProject:
     hall_width: float = 20.0
     elements: list[TrackElement] = field(default_factory=list)
     connections: list[TrackConnection] = field(default_factory=list)
+    guides_x: list[float] = field(default_factory=list)
+    guides_y: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.hall_length <= 0 or self.hall_width <= 0:
-            raise ValueError("Hallenmaße müssen positiv sein")
+            raise ValueError("Streckenbereichsmaße müssen positiv sein")
+        if any(not 0 <= value <= self.hall_length for value in self.guides_x):
+            raise ValueError("Vertical guide lies outside the track area")
+        if any(not 0 <= value <= self.hall_width for value in self.guides_y):
+            raise ValueError("Horizontal guide lies outside the track area")
         self.validate_connections()
 
     def element_by_id(self, element_id: str) -> TrackElement | None:
@@ -217,7 +270,7 @@ class TrackProject:
                 raise ValueError("Connected endpoints do not share a tangent")
 
     def element_fits_hall(self, element: TrackElement) -> bool:
-        """Return whether the complete road surface lies inside the hall."""
+        """Return whether the complete road surface lies inside the track area."""
         margin = element.width / 2
         return all(
             margin <= point.x <= self.hall_length - margin
@@ -229,7 +282,7 @@ class TrackProject:
         return all(self.element_fits_hall(element) for element in self.elements)
 
     def clamp_translation(self, element: TrackElement, dx: float, dy: float) -> tuple[float, float]:
-        """Clamp a translation so the complete road remains inside the hall."""
+        """Clamp a translation so the complete road remains inside the track area."""
         points = element.centerline_points(maximum_step_deg=1.0)
         margin = element.width / 2
         minimum_x = min(point.x for point in points)
