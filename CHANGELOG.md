@@ -17,6 +17,7 @@
 - Kopieren und Einfügen von Einzel- und Mehrfachauswahlen mit neuen IDs, internen Verbindungen und Undo/Redo
 - Integrierte deutsch-/englischsprachige Bedienungsanleitung unter Hilfe beziehungsweise F1
 - Allgemeiner Assistent zum exakten Schließen offener Strecken mit Auswahl zweier freier Anschlüsse, lokaler Geometrieoptimierung und Änderungsvorschau
+- Zweisprachige Lizenz für private und nicht-kommerzielle Vereinsnutzung einschließlich integriertem Lizenzdialog unter Hilfe
 
 ### Geändert
 
@@ -26,6 +27,8 @@
 - Gemeinsam verschobene, intern verbundene Elementgruppen können als starre Einheit an einen äußeren freien Anschluss andocken
 - Escape beendet Platzierung oder Auswahl nun zuverlässig, auch wenn ein Werkzeugleisten-Eingabefeld den Tastaturfokus besitzt
 - Der Schließassistent verändert erst nach Bestätigung und fasst sämtliche lokalen Anpassungen einschließlich der neuen Verbindung in einem Undo/Redo-Schritt zusammen
+- Bei zwei markierten freien Anschlüssen ist „Strecke schließen…“ zusätzlich direkt über das Rechtsklick-Menü erreichbar
+- Exaktes Andocken an der Streckenbereichsgrenze scheitert nicht mehr an Gleitkomma-Rundungsfehlern; der zulässige Mindestradius entspricht nun ohne zusätzlichen 0,10-m-Aufschlag der halben Fahrbahnbreite
 - Beim manuellen Verschieben werden bestehende Verbindungen des Elements gelöst; Nachbarelemente bleiben stehen
 - Beim Löschen werden angeschlossene Nachbaranschlüsse automatisch wieder freigegeben
 - Verbundene Fahrbahnflächen werden ohne sichtbaren Antialiasing-Spalt gezeichnet

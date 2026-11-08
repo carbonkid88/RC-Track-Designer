@@ -1,0 +1,125 @@
+RC Track Designer – Lizenz- und Nutzungshinweis
+Copyright (c) 2026 Daniel (carbonkid88). Alle Rechte vorbehalten.
+
+1. Urheberrecht und Geltungsbereich
+
+RC Track Designer einschließlich Quellcode, Benutzeroberfläche, Dokumentation,
+Grafiken und mitgelieferter eigener Dateien ist urheberrechtlich geschützt.
+Diese Lizenz gilt für alle Bestandteile des Projekts, soweit bei einzelnen
+Dateien nicht ausdrücklich eine andere Lizenz angegeben ist. Bibliotheken und
+sonstige Inhalte Dritter unterliegen ihren jeweiligen eigenen Lizenzen.
+
+Das carbonKID-Logo und das zugehörige Branding sind Eigentum des Autors und
+werden durch diese Lizenz nicht zur freien Verwendung außerhalb von RC Track
+Designer freigegeben.
+
+2. Erlaubte Nutzung
+
+Die Software darf für private, schulische, vereinsbezogene und sonstige
+nicht-kommerzielle Zwecke kostenlos verwendet werden. Dazu gehören insbesondere
+das Planen von RC-Car-Strecken sowie die Nutzung durch nicht-kommerzielle
+RC-Car-Vereine und deren Mitglieder.
+
+Quellcodeänderungen, Anpassungen und Forks sind für diese nicht-kommerziellen
+Zwecke gestattet, sofern dieser Lizenzhinweis vollständig erhalten bleibt und
+der ursprüngliche Autor sowie die ursprüngliche Quelle genannt werden.
+
+3. Weitergabe und Veröffentlichung
+
+Unveränderte oder veränderte Kopien dürfen für nicht-kommerzielle Zwecke
+weitergegeben oder öffentlich bereitgestellt werden, wenn
+
+- dieser Lizenzhinweis vollständig und unverändert beigefügt bleibt,
+- auf den ursprünglichen Autor und die Quelle
+  https://github.com/carbonkid88/RC-Track-Designer hingewiesen wird,
+- das vorhandene carbonKID-Logo weder entfernt, verdeckt noch verändert wird und
+- Änderungen deutlich als solche gekennzeichnet werden.
+
+4. Kommerzielle Nutzung
+
+Jede kommerzielle Nutzung, entgeltliche Weitergabe, Vermietung, der Verkauf,
+die Integration in ein kommerzielles Produkt oder eine kommerzielle
+Dienstleistung bedarf der vorherigen ausdrücklichen schriftlichen Genehmigung
+des Autors.
+
+5. Logo und Branding
+
+Das carbonKID-Logo darf innerhalb weitergegebener oder abgeleiteter Versionen
+von RC Track Designer nicht entfernt, ersetzt, überdeckt oder manipuliert
+werden. Diese Regel erteilt keine Erlaubnis, das Logo für andere Produkte,
+Projekte, Werbung oder eigene Markenauftritte zu verwenden.
+
+6. Haftungs- und Gewährleistungsausschluss
+
+Die Software wird ohne Zusicherung bestimmter Eigenschaften und ohne
+Gewährleistung bereitgestellt. Die Nutzung erfolgt auf eigene Gefahr. Soweit
+gesetzlich zulässig, haftet der Autor nicht für unmittelbare oder mittelbare
+Schäden, Datenverluste, entgangene Nutzungsmöglichkeiten oder sonstige Folgen,
+die aus der Verwendung oder Nichtverwendbarkeit der Software entstehen.
+
+7. Weitere Genehmigungen
+
+Anfragen zu kommerzieller Nutzung oder abweichenden Lizenzbedingungen können
+über das GitHub-Repository an den Autor gerichtet werden.
+
+--------------------------------------------------------------------------
+
+RC Track Designer – License and Usage Notice
+Copyright (c) 2026 Daniel (carbonkid88). All rights reserved.
+
+1. Copyright and Scope
+
+RC Track Designer, including its source code, user interface, documentation,
+graphics, and supplied original files, is protected by copyright. This license
+applies to all parts of the project unless a different license is explicitly
+stated for an individual file. Third-party libraries and other third-party
+content remain subject to their respective licenses.
+
+The carbonKID logo and associated branding are the property of the author.
+This license does not permit their use outside RC Track Designer.
+
+2. Permitted Use
+
+The software may be used free of charge for private, educational, club-related,
+and other non-commercial purposes. This specifically includes planning RC car
+tracks and use by non-commercial RC car clubs and their members.
+
+Source-code changes, adaptations, and forks are permitted for these
+non-commercial purposes, provided that this license notice remains complete and
+the original author and source are credited.
+
+3. Redistribution and Publication
+
+Unmodified or modified copies may be redistributed or published for
+non-commercial purposes provided that
+
+- this license notice is included in full and remains unmodified,
+- the original author and source
+  https://github.com/carbonkid88/RC-Track-Designer are credited,
+- the existing carbonKID logo is not removed, obscured, or altered, and
+- modifications are clearly identified as such.
+
+4. Commercial Use
+
+Any commercial use, paid distribution, rental, sale, integration into a
+commercial product, or commercial service requires the author's prior express
+written permission.
+
+5. Logo and Branding
+
+The carbonKID logo may not be removed, replaced, obscured, or manipulated in
+redistributed or derivative versions of RC Track Designer. This clause does not
+grant permission to use the logo for other products, projects, advertising, or
+independent branding.
+
+6. Disclaimer of Warranty and Liability
+
+The software is provided without warranties or guarantees of any kind. Use is
+at your own risk. To the extent permitted by law, the author shall not be liable
+for direct or indirect damages, loss of data, loss of use, or any other
+consequences arising from use of or inability to use the software.
+
+7. Additional Permission
+
+Requests for commercial use or alternative license terms may be directed to the
+author through the GitHub repository.

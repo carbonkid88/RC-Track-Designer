@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib.metadata import files as distribution_files
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         self.canvas.closure_connectors_changed.connect(
             lambda count: self.close_track_action.setEnabled(count == 2)
         )
+        self.canvas.close_track_requested.connect(self.close_track)
         self.statusBar().showMessage(self.tr_text("Ready — choose an element or click an existing track"))
         self._update_title()
 
@@ -119,6 +121,7 @@ class MainWindow(QMainWindow):
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.addAction(self.dismiss_action)
         self.guide_action = self._action(tr("User guide"), self.show_user_guide, "F1")
+        self.license_action = self._action(tr("License"), self.show_license)
         self.about_action = self._action(tr("About RC Track Designer"), self.about)
         self.undo_action = self.canvas.undo_stack.createUndoAction(self, tr("Undo")); self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self.redo_action = self.canvas.undo_stack.createRedoAction(self, tr("Redo")); self.redo_action.setShortcut("Ctrl+Y")
@@ -137,6 +140,7 @@ class MainWindow(QMainWindow):
         self.view_menu = self.menuBar().addMenu(tr("View")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
         self.help_menu = self.menuBar().addMenu(tr("Help"))
         self.help_menu.addAction(self.guide_action)
+        self.help_menu.addAction(self.license_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
@@ -326,7 +330,7 @@ class MainWindow(QMainWindow):
         values = {name: value}
         element = self.canvas.selected
         if name == "width" and element and element.kind != "straight":
-            values["radius"] = max(element.radius, value / 2 + 0.1)
+            values["radius"] = max(element.radius, value / 2)
         self.canvas.change_selected(self.tr_text("Change properties"), **values)
 
     def _sync_properties(self, element: TrackElement | None) -> None:
@@ -367,7 +371,7 @@ class MainWindow(QMainWindow):
 
     def _width_changed(self, value: float) -> None:
         self.canvas.default_width = value
-        minimum_radius = value / 2 + 0.1
+        minimum_radius = value / 2
         self.radius_spin.setMinimum(minimum_radius)
         radius = max(self.radius_spin.value(), minimum_radius)
         if radius != self.radius_spin.value():
@@ -507,7 +511,7 @@ class MainWindow(QMainWindow):
             ("Place and connect elements", "Choose a straight or curve from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Green connectors are connected; the orange connector is active."),
             ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. Esc cancels placement or clears the selection."),
             ("Close gaps and move groups", "Drag the free connector of a one-sided connected element to change its length, radius or curve angle. Release it near a compatible connector to close the gap. A selected connected group moves as one rigid unit and can snap to an external free connector."),
-            ("Close an open track", "Select the two free connectors of one open track with Ctrl+click. Choose Edit > Close track. The preview lists local length, radius and angle adjustments; nothing changes until you confirm."),
+            ("Close an open track", "Select the two free connectors of one open track with Ctrl+click. Choose Edit > Close track or use the right-click menu. The preview lists local length, radius and angle adjustments; nothing changes until you confirm."),
             ("Navigate and organise", "Zoom with the mouse wheel. Pan with the middle mouse button or Space plus the left mouse button. Drag guides from the rulers; remove a guide with the right mouse button."),
             ("Correct mistakes and save", "Use Ctrl+Z and Ctrl+Y for undo and redo. Ctrl+C and Ctrl+V copy and paste selected elements. Save projects as JSON files from the File menu."),
         )
@@ -522,6 +526,39 @@ class MainWindow(QMainWindow):
         layout.addWidget(buttons)
         dialog.exec()
 
+    @staticmethod
+    def _license_text() -> str:
+        source_license = Path(__file__).resolve().parents[2] / "LICENSE.txt"
+        if source_license.is_file():
+            return source_license.read_text(encoding="utf-8")
+        try:
+            candidates = distribution_files("rc-track-designer") or ()
+            for candidate in candidates:
+                if candidate.name == "LICENSE.txt":
+                    installed_license = Path(candidate.locate())
+                    if installed_license.is_file():
+                        return installed_license.read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            pass
+        return "License file LICENSE.txt was not found."
+
+    def show_license(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.tr_text("License"))
+        dialog.resize(760, 650)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser(dialog)
+        browser.setObjectName("licenseText")
+        browser.setPlainText(self._license_text())
+        layout.addWidget(browser)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText(
+            self.tr_text("Close")
+        )
+        layout.addWidget(buttons)
+        dialog.exec()
+
     def retranslate_ui(self) -> None:
         tr = self.tr_text
         actions = (
@@ -532,6 +569,7 @@ class MainWindow(QMainWindow):
             (self.copy_action, "Copy selection"), (self.paste_action, "Paste"),
             (self.close_track_action, "Close track…"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
+            (self.license_action, "License"),
             (self.about_action, "About RC Track Designer"),
             (self.straight_action, "Straight"), (self.undo_action, "Undo"), (self.redo_action, "Redo"),
         )

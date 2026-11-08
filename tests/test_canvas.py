@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QContextMenuEvent, QFocusEvent
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from rc_track_designer.canvas import TrackCanvas
@@ -167,6 +167,29 @@ def test_snapping_distance_is_in_screen_pixels_and_aligns_tangent():
     canvas.project.elements.append(third)
     assert canvas._snap_element(third)
     assert third.heading_deg == 0
+    canvas.close()
+
+
+def test_snap_to_exact_track_area_margin_tolerates_float_rounding():
+    app, canvas = make_canvas()
+    canvas.project.hall_length = 25
+    canvas.project.hall_width = 12
+    target = TrackElement("left", Point(2.1, 11), heading_deg=180,
+                          width=2, radius=1.1, angle_deg=90)
+    straight = TrackElement("straight", Point(13.89771466168521,
+                                               10.620253164556962),
+                            heading_deg=180, width=2, length=11)
+    canvas.project.elements.extend([target, straight])
+    canvas.selected = straight
+    canvas.selected_ids = {straight.id}
+    canvas.scale = 30.24
+
+    assert canvas._snap_element(straight)
+    assert isclose(straight.end_pose.point.x, target.start.x, abs_tol=1e-9)
+    assert isclose(straight.end_pose.point.y, target.start.y, abs_tol=1e-9)
+    assert straight.end_pose.heading_deg == target.start_pose.heading_deg
+    assert canvas.project.element_fits_hall(straight)
+    assert len(canvas.project.connections) == 1
     canvas.close()
 
 
@@ -856,6 +879,24 @@ def test_apply_track_closure_is_one_undoable_command():
     assert len(canvas.project.connections) == len(canvas.project.elements) - 1
     canvas.undo_stack.redo()
     assert len(canvas.project.connections) == len(canvas.project.elements)
+    canvas.close()
+
+
+def test_context_menu_requests_close_when_two_connectors_are_marked():
+    app, canvas = make_canvas()
+    first = TrackElement("straight", Point(3, 5), length=3)
+    second = TrackElement("straight", Point(12, 5), length=3)
+    canvas.project.elements.extend([first, second])
+    canvas.toggle_closure_connector(ConnectorRef(first.id, "start"))
+    canvas.toggle_closure_connector(ConnectorRef(second.id, "end"))
+    spy = QSignalSpy(canvas.close_track_requested)
+    menu = canvas._build_context_menu(None, None)
+
+    assert menu is not None
+    assert menu.actions()[0].text() == "Close track…"
+    menu.actions()[0].trigger()
+
+    assert spy.count() == 1
     canvas.close()
 
 

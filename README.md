@@ -26,7 +26,7 @@ $env:PYTHONPATH = "src"
 - Klicken wählt ein Element; Ziehen verschiebt es. Werkzeugleiste oder `Strg+Links`/`Strg+Rechts` dreht um 5°. `Entf` löscht.
 - Fahrbahnbreite, Geradenlänge und Mittellinienradius gelten für neue Elemente und ändern zugleich das ausgewählte Element.
 - Geradenlängen und Kurvenradien lassen sich über die Plus-/Minus-Schaltflächen in 0,5-m-Schritten ändern.
-- Der kleinste zulässige Mittellinienradius wird aus der Fahrbahnbreite berechnet. Dadurch kann die innere Fahrbahnkante einer Kurve nicht über den Kurvenmittelpunkt hinauslaufen oder sich selbst überschneiden.
+- Der kleinste zulässige Mittellinienradius entspricht der halben Fahrbahnbreite. Die innere Fahrbahnkante darf dabei in einem Punkt zusammenlaufen, aber nicht über den Kurvenmittelpunkt hinauslaufen oder sich selbst überschneiden.
 - Länge und Breite des Streckenbereichs sind jederzeit in der Werkzeugleiste änderbar; die Ansicht wird anschließend neu eingepasst.
 - Mausrad zoomt. Mittlere Maustaste oder `Leertaste` + linke Maustaste verschiebt die Ansicht. `F` passt den Streckenbereich ein.
 - Lineale an der oberen X- und linken Y-Achse zeigen die Meterpositionen passend zum aktuellen Zoom.
@@ -47,7 +47,7 @@ $env:PYTHONPATH = "src"
 - Beim Verschieben eines verbundenen Elements werden dessen Verbindungen gelöst, ohne Nachbarelemente mitzubewegen. Beim Löschen werden Nachbaranschlüsse wieder frei.
 - Bei einer einseitig verbundenen Geraden verlängert oder verkürzt eine Längenänderung ausschließlich den freien Anschluss; der verbundene Anschluss bleibt fest. Radius- und Winkeländerungen einseitig verbundener Kurven folgen derselben Regel.
 - Der freie Anschluss eines einseitig verbundenen Elements kann mit der Maus gezogen werden. Geraden rasten dabei in 0,5-m-Längen, Kurven in 0,5-m-Radien und 5°-Winkeln ein. Wird der Griff auf einem geometrisch passenden freien Gegenanschluss losgelassen, schließt der Editor die Verbindung.
-- Zum automatischen Schließen einer offenen Strecke werden ihre beiden freien Anschlüsse mit `Strg+Klick` markiert und anschließend `Bearbeiten > Strecke schließen…` gewählt. Ein allgemeiner lokaler Geometriesolver passt bei Bedarf benachbarte Längen, Radien und Kurvenwinkel innerhalb ihrer gültigen Grenzen an. Eine Vorschau listet alle Änderungen; übernommen werden sie gemeinsam als ein Undo/Redo-Schritt.
+- Zum automatischen Schließen einer offenen Strecke werden ihre beiden freien Anschlüsse mit `Strg+Klick` markiert und anschließend `Bearbeiten > Strecke schließen…` oder der gleichnamige Eintrag im Rechtsklick-Menü gewählt. Ein allgemeiner lokaler Geometriesolver passt bei Bedarf benachbarte Längen, Radien und Kurvenwinkel innerhalb ihrer gültigen Grenzen an. Eine Vorschau listet alle Änderungen; übernommen werden sie gemeinsam als ein Undo/Redo-Schritt.
 - Eine bestehende Verbindung lässt sich gezielt durch Doppelklick oder Rechtsklick auf ihren grünen Anschluss lösen. Das Lösen kann mit Undo/Redo rückgängig gemacht werden.
 - Mit `Umschalt + Klick` lassen sich mehrere Elemente auswählen. Ziehen verschiebt die gesamte Auswahl; interne Verbindungen bleiben erhalten.
 - Eine gemeinsam verschobene Auswahl kann über einen ihrer freien äußeren Anschlüsse magnetisch an ein Element außerhalb der Auswahl andocken. Die Gruppe wird dafür als starre Einheit ausgerichtet; interne Verbindungen bleiben erhalten.
@@ -65,6 +65,15 @@ Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangspositi
 ```powershell
 .venv\Scripts\python -m pytest
 ```
+
+## Lizenz
+
+RC Track Designer darf kostenlos für private, schulische, vereinsbezogene und
+andere nicht-kommerzielle Zwecke verwendet und unter den in der Lizenz
+genannten Bedingungen weitergegeben oder angepasst werden. Kommerzielle
+Nutzung erfordert die vorherige schriftliche Genehmigung des Autors. Der
+vollständige deutsch- und englischsprachige Text steht in [LICENSE.txt](LICENSE.txt)
+und direkt im Programm unter `Hilfe > Lizenz`.
 
 ## Weitere Sprachen beitragen
 

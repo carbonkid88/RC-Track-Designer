@@ -20,6 +20,7 @@ class TrackCanvas(QWidget):
     selection_changed = Signal(object)
     status_message = Signal(str)
     closure_connectors_changed = Signal(int)
+    close_track_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -1109,25 +1110,50 @@ class TrackCanvas(QWidget):
                 return
         super().mouseDoubleClickEvent(event)
 
+    def _delete_guide(self, guide: tuple[str, int, float]) -> None:
+        axis, index, _value = guide
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        before_connector = self.active_connector
+        values = self.project.guides_x if axis == "x" else self.project.guides_y
+        values.pop(index)
+        self._commit_change(self._tr("Delete guide"), before,
+                            before_selection, before_connector)
+
+    def _build_context_menu(self, connector: ConnectorRef | None,
+                            guide: tuple[str, int, float] | None) -> QMenu | None:
+        connection = self.project.connection_for(connector) if connector else None
+        can_close = len(self.closure_connectors) == 2
+        if not (connection or guide or can_close):
+            return None
+        menu = QMenu(self)
+        if can_close:
+            action = menu.addAction(self._tr("Close track…"))
+            action.triggered.connect(self.close_track_requested.emit)
+        if connection and connector:
+            action = menu.addAction(self._tr("Disconnect connection"))
+            action.triggered.connect(
+                lambda checked=False, selected=connector:
+                self.disconnect_connector(selected)
+            )
+        if guide:
+            action = menu.addAction(self._tr("Delete guide"))
+            action.triggered.connect(
+                lambda checked=False, selected=guide: self._delete_guide(selected)
+            )
+        return menu
+
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
         connector = self._connector_at(event.pos())
-        if connector and self.project.connection_for(connector):
-            menu = QMenu(self)
-            disconnect_action = menu.addAction(self._tr("Disconnect connection"))
-            if menu.exec(event.globalPos()) is disconnect_action:
-                self.disconnect_connector(connector)
+        guide = self._guide_at(QPointF(event.pos()))
+        connection = self.project.connection_for(connector) if connector else None
+        if guide and not connection and len(self.closure_connectors) != 2:
+            self._delete_guide(guide)
             event.accept()
             return
-        guide = self._guide_at(QPointF(event.pos()))
-        if guide:
-            axis, index, _value = guide
-            before = deepcopy(self.project)
-            before_selection = self._selection_state()
-            before_connector = self.active_connector
-            values = self.project.guides_x if axis == "x" else self.project.guides_y
-            values.pop(index)
-            self._commit_change(self._tr("Delete guide"), before,
-                                before_selection, before_connector)
+        menu = self._build_context_menu(connector, guide)
+        if menu:
+            menu.exec(event.globalPos())
             event.accept()
             return
         super().contextMenuEvent(event)

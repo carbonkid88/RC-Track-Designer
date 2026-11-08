@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -120,16 +121,16 @@ def test_track_width_keeps_curve_radius_above_valid_inner_edge():
 
     window.width_spin.setValue(6)
 
-    assert window.radius_spin.minimum() == 3.1
-    assert window.radius_spin.value() >= 3.1
-    assert window.canvas.default_radius >= 3.1
+    assert window.radius_spin.minimum() == 3.0
+    assert window.radius_spin.value() >= 3.0
+    assert window.canvas.default_radius >= 3.0
 
     curve = TrackElement("left", Point(5, 5), width=2, radius=2, angle_deg=45)
     window.canvas.project.elements.append(curve)
     window.canvas.selected = curve
     window.canvas.selected_ids = {curve.id}
     window._sync_properties(curve)
-    assert window.property_spins["radius"].minimum() == 1.1
+    assert window.property_spins["radius"].minimum() == 1.0
     window.close()
 
 
@@ -161,7 +162,17 @@ def test_help_menu_contains_user_guide_with_f1_shortcut():
     assert window.guide_action in window.help_menu.actions()
     assert window.guide_action.text() == "Bedienungsanleitung"
     assert window.guide_action.shortcut() == QKeySequence("F1")
+    assert window.license_action in window.help_menu.actions()
+    assert window.license_action.text() == "Lizenz"
     window.close()
+
+
+def test_integrated_license_uses_repository_license_file():
+    license_path = Path(__file__).resolve().parents[1] / "LICENSE.txt"
+
+    assert MainWindow._license_text() == license_path.read_text(encoding="utf-8")
+    assert "nicht-kommerzielle Zwecke" in MainWindow._license_text()
+    assert "non-commercial purposes" in MainWindow._license_text()
 
 
 def test_close_track_action_requires_two_selected_free_connectors():

@@ -7,7 +7,7 @@ from math import cos, hypot, radians, sin
 from uuid import uuid4
 
 
-MINIMUM_CURVE_INNER_RADIUS = 0.1
+MINIMUM_CURVE_INNER_RADIUS = 0.0
 
 
 @dataclass(frozen=True)
@@ -272,9 +272,10 @@ class TrackProject:
     def element_fits_hall(self, element: TrackElement) -> bool:
         """Return whether the complete road surface lies inside the track area."""
         margin = element.width / 2
+        tolerance = 1e-9
         return all(
-            margin <= point.x <= self.hall_length - margin
-            and margin <= point.y <= self.hall_width - margin
+            margin - tolerance <= point.x <= self.hall_length - margin + tolerance
+            and margin - tolerance <= point.y <= self.hall_width - margin + tolerance
             for point in element.centerline_points(maximum_step_deg=1.0)
         )
 

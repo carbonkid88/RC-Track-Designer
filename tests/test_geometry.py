@@ -2,6 +2,13 @@ from math import isclose
 import pytest
 from rc_track_designer.model import Point, TrackElement, TrackProject
 
+
+def test_curve_radius_may_equal_half_track_width_without_crossing_center():
+    curve = TrackElement("left", Point(5, 5), width=2, radius=1, angle_deg=90)
+
+    assert curve.minimum_centerline_radius == 1
+    assert curve.has_valid_road_geometry
+
 def assert_point(point, x, y):
     assert isclose(point.x, x, abs_tol=1e-9)
     assert isclose(point.y, y, abs_tol=1e-9)
