@@ -22,6 +22,12 @@
 
 - Die zweisprachige nicht-kommerzielle Lizenz bleibt als `LICENSE.txt` Bestandteil des Projekts und ist weiterhin unter `Hilfe > Lizenz` vollständig einsehbar
 
+### Build
+
+- Reproduzierbarer portabler Windows-64-Bit-One-Folder-Build mit PyInstaller-Spec und PowerShell-Buildskript
+- Automatische Beta-ZIP-Erzeugung einschließlich Startanleitung, Lizenz, Sprachdateien, Icons und SHA256-Prüfsumme
+- Build-Ausgaben werden aus der Versionsverwaltung ausgeschlossen; Laufzeiteinstellungen bleiben im Windows-Benutzerprofil
+
 ## [0.2.0] - 2026-11-07
 
 ### Hinzugefügt

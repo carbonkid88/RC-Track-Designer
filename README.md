@@ -66,6 +66,16 @@ Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangspositi
 .venv\Scripts\python -m pytest
 ```
 
+## Portable Windows-Beta bauen
+
+Die reproduzierbare PyInstaller-One-Folder-Konfiguration und der vollständige
+Buildablauf sind in [BUILD_WINDOWS.md](BUILD_WINDOWS.md) dokumentiert. Der
+Build wird mit folgendem Befehl einschließlich Tests und ZIP-Erzeugung gestartet:
+
+```powershell
+.\build_windows.ps1
+```
+
 ## Lizenz
 
 RC Track Designer darf kostenlos für private, schulische, vereinsbezogene und

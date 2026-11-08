@@ -1,0 +1,33 @@
+RC Track Designer v0.3.0 beta 1 - Windows 64 Bit
+=================================================
+
+SYSTEMVORAUSSETZUNGEN
+- Windows 10 oder Windows 11, jeweils 64 Bit
+- Keine separate Python- oder PySide6-Installation erforderlich
+- Schreibzugriff auf den Ordner, in dem eigene Projektdateien gespeichert werden
+
+START
+1. Die ZIP-Datei vollständig in einen beliebigen Ordner entpacken.
+2. Den Programmordner nicht unvollständig verschieben oder einzelne DLL-Dateien entfernen.
+3. RC-Track-Designer.exe doppelt anklicken.
+
+Windows SmartScreen kann bei einer nicht digital signierten Beta-Version eine Warnung
+anzeigen. In diesem Fall die Datei nur starten, wenn sie aus der vertrauenswürdigen
+Projektquelle stammt.
+
+DATEN UND EINSTELLUNGEN
+- Projekte werden nur an dem Speicherort geschrieben, den du im Speichern-Dialog wählst.
+- Theme, Sprache und weitere Benutzereinstellungen speichert Windows im Benutzerprofil.
+- Eigene zusätzliche Sprachdateien werden im in den Einstellungen angezeigten
+  Benutzerordner abgelegt, nicht im Programmordner.
+
+SPRACHE UND THEME
+Unter Ansicht > Einstellungen kann zwischen Deutsch/Englisch und Hell/Dunkel
+gewechselt werden.
+
+LIZENZ
+Die vollständigen Lizenzbedingungen stehen in LICENSE.txt und im Programm unter
+Hilfe > Lizenz.
+
+Dies ist eine Beta-Version. Bitte Projekte regelmäßig speichern und Fehler möglichst
+mit einer kurzen Beschreibung sowie der betroffenen .rct.json-Datei melden.
