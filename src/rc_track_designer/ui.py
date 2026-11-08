@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractSpinBox, QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
+    QDockWidget, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self._create_actions()
         self._create_menu()
         self._create_toolbars()
+        self._create_properties_dock()
         self.apply_appearance()
         self.canvas.project_changed.connect(self._mark_dirty)
         self.canvas.selection_changed.connect(self._selection_changed)
@@ -105,6 +106,8 @@ class MainWindow(QMainWindow):
         self.fit_action.setIcon(QIcon(str(Path(__file__).with_name("assets") / "fit_view.svg")))
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.about_action = self._action(tr("About RC Track Designer"), self.about)
+        self.undo_action = self.canvas.undo_stack.createUndoAction(self, tr("Undo")); self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self.redo_action = self.canvas.undo_stack.createRedoAction(self, tr("Redo")); self.redo_action.setShortcut("Ctrl+Y")
 
     def _create_menu(self) -> None:
         tr = self.tr_text
@@ -113,6 +116,7 @@ class MainWindow(QMainWindow):
         file_menu.addActions([self.new_action, self.open_action, self.save_action, self.save_as_action])
         file_menu.addSeparator(); file_menu.addAction(self.exit_action)
         self.edit_menu = self.menuBar().addMenu(tr("Edit")); edit = self.edit_menu
+        edit.addActions([self.undo_action, self.redo_action]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("View")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
         self.help_menu = self.menuBar().addMenu(tr("Help")); self.help_menu.addAction(self.about_action)
@@ -126,6 +130,8 @@ class MainWindow(QMainWindow):
     def _create_toolbars(self) -> None:
         tr = self.tr_text
         main = QToolBar(tr("File and editing"), self); main.setMovable(False)
+        self.main_toolbar = main
+        main.setContentsMargins(0, 0, 198, 0)
         self.addToolBar(main)
         main.addActions([self.new_action, self.open_action, self.save_action]); main.addSeparator()
         main.addAction(self.fit_action)
@@ -143,6 +149,8 @@ class MainWindow(QMainWindow):
         self.hall_width_spin.valueChanged.connect(self._hall_width_changed)
         main.addSeparator(); main.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         palette = QToolBar(tr("Element palette"), self); palette.setMovable(False)
+        self.palette_toolbar = palette
+        palette.setContentsMargins(0, 0, 198, 0)
         self.addToolBarBreak(); self.addToolBar(palette)
         self.elements_label = QLabel(f" {tr('Elements:')} ")
         self.straight_action = QAction(tr("Straight"), self); self.straight_action.triggered.connect(lambda: self.canvas.set_placement("straight"))
@@ -168,6 +176,17 @@ class MainWindow(QMainWindow):
         palette_layout.addLayout(left_row); palette_layout.addLayout(right_row)
         palette.addWidget(palette_widget)
         palette.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.logo_panel = QFrame(self)
+        self.logo_panel.setObjectName("applicationLogoPanel")
+        self.logo_panel.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        logo_layout = QHBoxLayout(self.logo_panel)
+        logo_layout.setContentsMargins(12, 8, 12, 8)
+        self.logo_label = QLabel()
+        self.logo_label.setObjectName("applicationLogo")
+        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo_label.setToolTip("carbonKID")
+        self.logo_source = QPixmap(str(Path(__file__).with_name("assets") / "carbonkid_logo.png"))
+        logo_layout.addWidget(self.logo_label)
         options = QToolBar(tr("Element dimensions"), self); options.setMovable(False); self.addToolBarBreak(); self.addToolBar(options)
         self.width_spin = self._spin(2, 0.1, 20, " m")
         self.length_spin = self._spin(5, 0.1, 200, " m")
@@ -178,33 +197,123 @@ class MainWindow(QMainWindow):
         self.width_spin.valueChanged.connect(self._width_changed)
         self.length_spin.valueChanged.connect(self._length_changed)
         self.radius_spin.valueChanged.connect(self._radius_changed)
+        QTimer.singleShot(0, self._position_logo_panel)
+
+    def _position_logo_panel(self) -> None:
+        if not hasattr(self, "logo_panel"):
+            return
+        top = self.main_toolbar.geometry().top()
+        bottom = self.palette_toolbar.geometry().bottom()
+        panel_width = 190
+        self.logo_panel.setGeometry(self.width() - panel_width, top,
+                                    panel_width, max(1, bottom - top + 1))
+        margins = self.logo_panel.layout().contentsMargins()
+        available = QSize(
+            max(1, self.logo_panel.width() - margins.left() - margins.right()),
+            max(1, self.logo_panel.height() - margins.top() - margins.bottom()),
+        )
+        self.logo_label.setPixmap(self.logo_source.scaled(
+            available, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+        self.logo_panel.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._position_logo_panel)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        QTimer.singleShot(0, self._position_logo_panel)
+
+    def _create_properties_dock(self) -> None:
+        tr = self.tr_text
+        self.properties_dock = QDockWidget(tr("Properties"), self)
+        self.properties_dock.setObjectName("propertiesDock")
+        panel = QWidget(); form = QFormLayout(panel)
+        self.element_type_label = QLabel(tr("Element type:"))
+        self.element_type_value = QLabel("—")
+        form.addRow(self.element_type_label, self.element_type_value)
+        self.property_spins = {}
+        definitions = (
+            ("x", tr("X position:"), 0.0, -10000, 10000, " m"),
+            ("y", tr("Y position:"), 0.0, -10000, 10000, " m"),
+            ("heading_deg", tr("Rotation:"), 0.0, -3600, 3600, "°"),
+            ("width", tr("Track width:"), 2.0, 0.1, 20, " m"),
+            ("length", tr("Length:"), 5.0, 0.1, 200, " m"),
+            ("radius", tr("Radius:"), 5.0, 0.1, 200, " m"),
+            ("angle_deg", tr("Curve angle:"), 45.0, 1, 360, "°"),
+        )
+        self.property_labels = {}
+        for name, label_text, value, minimum, maximum, suffix in definitions:
+            label = QLabel(label_text); spin = self._spin(value, minimum, maximum, suffix)
+            spin.valueChanged.connect(lambda new_value, key=name: self._property_changed(key, new_value))
+            self.property_labels[name] = label; self.property_spins[name] = spin
+            form.addRow(label, spin)
+        self.properties_dock.setWidget(panel); self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_dock)
+        self.properties_dock.setMinimumWidth(260); panel.setEnabled(False)
+
+    def _property_changed(self, name: str, value: float) -> None:
+        self.canvas.change_selected(self.tr_text("Change properties"), **{name: value})
+
+    def _sync_properties(self, element: TrackElement | None) -> None:
+        panel = self.properties_dock.widget(); panel.setEnabled(element is not None)
+        if not element:
+            self.element_type_value.setText("—")
+            return
+        type_source = {"straight": "Straight", "left": "Left curve", "right": "Right curve"}
+        self.element_type_value.setText(self.tr_text(type_source[element.kind]))
+        values = {"x": element.start.x, "y": element.start.y, "heading_deg": element.heading_deg,
+                  "width": element.width, "length": element.length, "radius": element.radius,
+                  "angle_deg": element.angle_deg}
+        for name, spin in self.property_spins.items():
+            spin.blockSignals(True); spin.setValue(values[name]); spin.blockSignals(False)
+        is_curve = element.kind != "straight"
+        self.property_spins["heading_deg"].setEnabled(True)
+        self.property_spins["length"].setEnabled(not is_curve)
+        self.property_spins["radius"].setEnabled(is_curve)
+        self.property_spins["angle_deg"].setEnabled(is_curve)
 
     def _selection_changed(self, element: TrackElement | None) -> None:
         self.delete_action.setEnabled(element is not None)
-        self.rotate_left_action.setEnabled(element is not None); self.rotate_right_action.setEnabled(element is not None)
+        self.rotate_left_action.setEnabled(self.canvas.can_rotate_selected(5))
+        self.rotate_right_action.setEnabled(self.canvas.can_rotate_selected(-5))
         if element:
             for spin, value in ((self.width_spin, element.width), (self.length_spin, element.length), (self.radius_spin, element.radius)):
                 spin.blockSignals(True); spin.setValue(value); spin.blockSignals(False)
+        self._sync_properties(element)
 
     def _width_changed(self, value: float) -> None:
         self.canvas.default_width = value
-        if self.canvas.selected: self.canvas.selected.width = value; self.canvas.project_changed.emit(); self.canvas.update()
+        if self.canvas.selected: self.canvas.change_selected(self.tr_text("Change track width"), width=value)
 
     def _length_changed(self, value: float) -> None:
         self.canvas.default_length = value
-        if self.canvas.selected: self.canvas.selected.length = value; self.canvas.project_changed.emit(); self.canvas.update()
+        if self.canvas.selected: self.canvas.change_selected(self.tr_text("Change length"), length=value)
 
     def _radius_changed(self, value: float) -> None:
         self.canvas.default_radius = value
-        if self.canvas.selected: self.canvas.selected.radius = value; self.canvas.project_changed.emit(); self.canvas.update()
+        if self.canvas.selected: self.canvas.change_selected(self.tr_text("Change radius"), radius=value)
 
     def _hall_length_changed(self, value: float) -> None:
+        previous = self.canvas.project.hall_length
         self.canvas.project.hall_length = value
+        if not self.canvas.project.all_elements_fit_hall():
+            self.canvas.project.hall_length = previous
+            self.hall_length_spin.blockSignals(True); self.hall_length_spin.setValue(previous); self.hall_length_spin.blockSignals(False)
+            self.statusBar().showMessage(self.tr_text("The hall would be too small for existing elements."), 4000)
+            return
         self.canvas.fit_to_view()
         self.canvas.project_changed.emit()
 
     def _hall_width_changed(self, value: float) -> None:
+        previous = self.canvas.project.hall_width
         self.canvas.project.hall_width = value
+        if not self.canvas.project.all_elements_fit_hall():
+            self.canvas.project.hall_width = previous
+            self.hall_width_spin.blockSignals(True); self.hall_width_spin.setValue(previous); self.hall_width_spin.blockSignals(False)
+            self.statusBar().showMessage(self.tr_text("The hall would be too small for existing elements."), 4000)
+            return
         self.canvas.fit_to_view()
         self.canvas.project_changed.emit()
 
@@ -251,7 +360,7 @@ class MainWindow(QMainWindow):
             (self.delete_action, "Delete selection"), (self.rotate_left_action, "Rotate 5° left"),
             (self.rotate_right_action, "Rotate 5° right"), (self.fit_action, "Fit hall"),
             (self.settings_action, "Settings…"), (self.about_action, "About RC Track Designer"),
-            (self.straight_action, "Straight"),
+            (self.straight_action, "Straight"), (self.undo_action, "Undo"), (self.redo_action, "Redo"),
         )
         for action, source in actions: action.setText(tr(source))
         for menu, source in ((self.file_menu, "File"), (self.edit_menu, "Edit"),
@@ -266,13 +375,26 @@ class MainWindow(QMainWindow):
         self.hall_length_label.setText(f" {tr('Hall L:')} ")
         self.hall_width_label.setText(f" {tr('Hall W:')} ")
         self.fit_action.setToolTip(tr("Reset zoom and pan so the complete hall is centred in the workspace."))
+        self.properties_dock.setWindowTitle(tr("Properties"))
+        self.element_type_label.setText(tr("Element type:"))
+        property_sources = {"x": "X position:", "y": "Y position:", "heading_deg": "Rotation:",
+                            "width": "Track width:", "length": "Length:", "radius": "Radius:",
+                            "angle_deg": "Curve angle:"}
+        for name, source in property_sources.items(): self.property_labels[name].setText(tr(source))
+        self._sync_properties(self.canvas.selected)
         self.canvas.set_appearance({}, tr)
         self._update_title()
 
     def _can_discard(self) -> bool:
         if not self.dirty: return True
-        answer = QMessageBox.question(self, self.tr_text("Unsaved changes"), self.tr_text("Save changes before continuing?"),
-                                      QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+        box = QMessageBox(QMessageBox.Icon.Question, self.tr_text("Unsaved changes"),
+                          self.tr_text("Save changes before continuing?"),
+                          QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                          self)
+        box.button(QMessageBox.StandardButton.Save).setText(self.tr_text("Save"))
+        box.button(QMessageBox.StandardButton.Discard).setText(self.tr_text("Discard"))
+        box.button(QMessageBox.StandardButton.Cancel).setText(self.tr_text("Cancel"))
+        answer = QMessageBox.StandardButton(box.exec())
         if answer == QMessageBox.StandardButton.Cancel: return False
         if answer == QMessageBox.StandardButton.Save: return self.save()
         return True

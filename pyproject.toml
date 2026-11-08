@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rc-track-designer"
-version = "0.1.1"
+version = "0.2.0"
 description = "Maßstabsgetreuer 2D-Editor für RC-Rennstrecken"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,7 @@ rc-track-designer = "rc_track_designer.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rc_track_designer = ["locales/*.json", "assets/*.svg"]
+rc_track_designer = ["locales/*.json", "assets/*.svg", "assets/*.png"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

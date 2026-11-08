@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import cos, radians, sin
+from math import cos, hypot, radians, sin
 from uuid import uuid4
 
 
@@ -17,6 +17,38 @@ class Point:
 class Pose:
     point: Point
     heading_deg: float
+
+
+@dataclass(frozen=True)
+class ConnectorRef:
+    element_id: str
+    endpoint: str
+
+    def __post_init__(self) -> None:
+        if self.endpoint not in {"start", "end"}:
+            raise ValueError("Connector endpoint must be 'start' or 'end'")
+
+
+@dataclass(frozen=True)
+class TrackConnection:
+    first: ConnectorRef
+    second: ConnectorRef
+
+    def __post_init__(self) -> None:
+        if self.first == self.second:
+            raise ValueError("A connector cannot connect to itself")
+        if self.first.endpoint == self.second.endpoint:
+            raise ValueError("Only start-to-end connections are valid")
+
+    def contains(self, connector: ConnectorRef) -> bool:
+        return connector in (self.first, self.second)
+
+    def to_dict(self) -> dict:
+        return {"first": vars(self.first), "second": vars(self.second)}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TrackConnection":
+        return cls(ConnectorRef(**data["first"]), ConnectorRef(**data["second"]))
 
 
 @dataclass
@@ -62,6 +94,22 @@ class TrackElement:
     def start_pose(self) -> Pose:
         return Pose(self.start, self.heading_deg % 360)
 
+    def pose_at(self, endpoint: str) -> Pose:
+        if endpoint == "start": return self.start_pose
+        if endpoint == "end": return self.end_pose
+        raise ValueError("Endpoint must be 'start' or 'end'")
+
+    def align_endpoint(self, endpoint: str, target: Pose) -> None:
+        if endpoint == "start":
+            self.start = target.point
+            self.heading_deg = target.heading_deg % 360
+            return
+        if endpoint != "end":
+            raise ValueError("Endpoint must be 'start' or 'end'")
+        self.heading_deg = ((target.heading_deg - self.signed_angle_deg) if self.kind != "straight" else target.heading_deg) % 360
+        current = self.end_pose.point
+        self.start = Point(self.start.x + target.point.x - current.x, self.start.y + target.point.y - current.y)
+
     def centerline_points(self, maximum_step_deg: float = 5.0) -> list[Point]:
         if self.kind == "straight":
             return [self.start, self.end_pose.point]
@@ -106,7 +154,101 @@ class TrackProject:
     hall_length: float = 30.0
     hall_width: float = 20.0
     elements: list[TrackElement] = field(default_factory=list)
+    connections: list[TrackConnection] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.hall_length <= 0 or self.hall_width <= 0:
             raise ValueError("Hallenmaße müssen positiv sein")
+        self.validate_connections()
+
+    def element_by_id(self, element_id: str) -> TrackElement | None:
+        return next((item for item in self.elements if item.id == element_id), None)
+
+    def connector_pose(self, connector: ConnectorRef) -> Pose:
+        element = self.element_by_id(connector.element_id)
+        if element is None: raise ValueError("Unknown element")
+        return element.pose_at(connector.endpoint)
+
+    def connection_for(self, connector: ConnectorRef) -> TrackConnection | None:
+        return next((item for item in self.connections if item.contains(connector)), None)
+
+    def is_free(self, connector: ConnectorRef) -> bool:
+        return self.element_by_id(connector.element_id) is not None and self.connection_for(connector) is None
+
+    def connect(self, first: ConnectorRef, second: ConnectorRef) -> TrackConnection:
+        if first.element_id == second.element_id: raise ValueError("Self-connections are not valid")
+        if first.endpoint == second.endpoint: raise ValueError("Only start-to-end connections are valid")
+        if not self.is_free(first) or not self.is_free(second): raise ValueError("Both connectors must be free")
+        first_pose, second_pose = self.connector_pose(first), self.connector_pose(second)
+        distance = hypot(first_pose.point.x - second_pose.point.x, first_pose.point.y - second_pose.point.y)
+        angle = abs((first_pose.heading_deg - second_pose.heading_deg + 180) % 360 - 180)
+        if distance > 1e-6 or angle > 1e-6:
+            raise ValueError("Connected endpoints must share position and tangent direction")
+        connection = TrackConnection(first, second)
+        self.connections.append(connection)
+        return connection
+
+    def disconnect_element(self, element_id: str) -> list[TrackConnection]:
+        removed = [item for item in self.connections if item.first.element_id == element_id or item.second.element_id == element_id]
+        self.connections = [item for item in self.connections if item not in removed]
+        return removed
+
+    def disconnect(self, connector: ConnectorRef) -> TrackConnection | None:
+        connection = self.connection_for(connector)
+        if connection is not None: self.connections.remove(connection)
+        return connection
+
+    def remove_element(self, element: TrackElement) -> None:
+        self.disconnect_element(element.id)
+        self.elements.remove(element)
+
+    def validate_connections(self) -> None:
+        occupied: set[ConnectorRef] = set()
+        ids = {item.id for item in self.elements}
+        for connection in self.connections:
+            for connector in (connection.first, connection.second):
+                if connector.element_id not in ids: raise ValueError("Connection references an unknown element")
+                if connector in occupied: raise ValueError("A connector cannot have multiple connections")
+                occupied.add(connector)
+            first_pose = self.connector_pose(connection.first); second_pose = self.connector_pose(connection.second)
+            if hypot(first_pose.point.x - second_pose.point.x, first_pose.point.y - second_pose.point.y) > 1e-6:
+                raise ValueError("Connected endpoints do not share a position")
+            if abs((first_pose.heading_deg - second_pose.heading_deg + 180) % 360 - 180) > 1e-6:
+                raise ValueError("Connected endpoints do not share a tangent")
+
+    def element_fits_hall(self, element: TrackElement) -> bool:
+        """Return whether the complete road surface lies inside the hall."""
+        margin = element.width / 2
+        return all(
+            margin <= point.x <= self.hall_length - margin
+            and margin <= point.y <= self.hall_width - margin
+            for point in element.centerline_points(maximum_step_deg=1.0)
+        )
+
+    def all_elements_fit_hall(self) -> bool:
+        return all(self.element_fits_hall(element) for element in self.elements)
+
+    def clamp_translation(self, element: TrackElement, dx: float, dy: float) -> tuple[float, float]:
+        """Clamp a translation so the complete road remains inside the hall."""
+        points = element.centerline_points(maximum_step_deg=1.0)
+        margin = element.width / 2
+        minimum_x = min(point.x for point in points)
+        maximum_x = max(point.x for point in points)
+        minimum_y = min(point.y for point in points)
+        maximum_y = max(point.y for point in points)
+        dx = min(max(dx, margin - minimum_x), self.hall_length - margin - maximum_x)
+        dy = min(max(dy, margin - minimum_y), self.hall_width - margin - maximum_y)
+        return dx, dy
+
+    def clamp_group_translation(self, elements: list[TrackElement], dx: float, dy: float) -> tuple[float, float]:
+        if not elements: return 0.0, 0.0
+        minimum_dx, maximum_dx = float("-inf"), float("inf")
+        minimum_dy, maximum_dy = float("-inf"), float("inf")
+        for element in elements:
+            points = element.centerline_points(maximum_step_deg=1.0)
+            margin = element.width / 2
+            minimum_dx = max(minimum_dx, margin - min(point.x for point in points))
+            maximum_dx = min(maximum_dx, self.hall_length - margin - max(point.x for point in points))
+            minimum_dy = max(minimum_dy, margin - min(point.y for point in points))
+            maximum_dy = min(maximum_dy, self.hall_width - margin - max(point.y for point in points))
+        return min(max(dx, minimum_dx), maximum_dx), min(max(dy, minimum_dy), maximum_dy)

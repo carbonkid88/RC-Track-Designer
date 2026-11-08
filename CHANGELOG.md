@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.2.0] - 2026-11-07
+
+### Hinzugefügt
+
+- Magnetisches Andocken über freie Anfangs- und Endanschlüsse mit zoomunabhängiger Fangdistanz
+- Smart Track Building vorwärts und rückwärts ab jedem ausgewählten freien Anschluss
+- Unterschiedliche Markierungen für freie, aktive und verbundene Anschlüsse
+- Undo/Redo für Platzieren, Verschieben, Drehen, Löschen, Eigenschaften und Verbindungen
+- Numerisches Eigenschaftenfenster für Position, Drehung und Elementgeometrie
+- Persistente Verbindungen im abwärtskompatiblen JSON-Format Version 2
+- Hallengrenzenprüfung für die vollständige Fahrbahnfläche
+- Deutlichere magnetische Fangvorschau und größerer Fangbereich
+
+### Geändert
+
+- Beim manuellen Verschieben werden bestehende Verbindungen des Elements gelöst; Nachbarelemente bleiben stehen
+- Beim Löschen werden angeschlossene Nachbaranschlüsse automatisch wieder freigegeben
+- Verbundene Fahrbahnflächen werden ohne sichtbaren Antialiasing-Spalt gezeichnet
+- Verschieben wird bereits während des Ziehens an der Hallengrenze begrenzt, ohne Zurückspringen
+- Kompaktere Anschlussmarker verdecken auch sehr kurze 5°-Kurven nicht mehr
+- Kollisionsschutz verhindert überlappende Geraden und Kurven bereits während Platzieren und Ziehen
+- Mehrfachauswahl mit Umschalt-Klick und gemeinsames Verschieben verbundener Elementgruppen
+- Gezieltes Lösen einer Verbindung per Doppelklick oder Kontextmenü am verbundenen Anschluss
+- Kollisionsgeprüfte Drehung mit verständlicher Rückmeldung statt überlappender Elemente
+- Flüssigeres Ziehen durch Wiederverwendung der Kollisionskonturen unbewegter Elemente
+- Zuverlässigere Auswahl kleiner Kurven durch getrennte Toleranzen für Anschlussklicks und magnetisches Fangen
+- Glatte Kurvendarstellung und präzisere Treffer-/Kollisionskonturen durch echte Kreisbögen
+- Bereits geometrisch überlappende Elemente können wieder aus der Kollision herausgezogen werden
+- Weniger aggressives magnetisches Andocken mit ausgewogener Fangdistanz und begrenzter Tangentenkorrektur
+- Sichtbarer Elementtyp (Gerade, Links- oder Rechtskurve) im Eigenschaftenfenster
+- Auswahlrahmen für die gemeinsame Auswahl und Bewegung mehrerer Streckenelemente
+- Manuelle Kurvendrehung dynamisch und symmetrisch begrenzt: je Richtung höchstens `90° − Kurvenwinkel`
+- Saubere Auswahlkontur ohne breite Zeichenstift-Artefakte an 75°–90°-Kurven; Darstellung und Kollisionskontur verwenden dieselbe Fahrbahnfläche
+- Proportional skalierter carbonKID-Markenbereich am rechten Fensterrand über Hauptwerkzeugleiste und Kurvenpalette
+- Schaltflächen des Ungespeichert-Dialogs folgen der gewählten Sprache
+
 ## [0.1.1] - 2026-11-07
 
 ### Behoben

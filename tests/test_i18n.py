@@ -11,6 +11,13 @@ def test_german_translation_and_formatting():
     manager = TranslationManager("de")
     assert manager.tr("Save") == "Speichern"
     assert manager.tr("Saved: {path}", path="layout.json") == "Gespeichert: layout.json"
+    assert manager.tr("Discard") == "Verwerfen"
+    assert manager.tr("Cancel") == "Abbrechen"
+    assert manager.tr("Element snapped into place.") == "Element magnetisch eingerastet."
+    assert manager.tr("Element type:") == "Elementtyp:"
+    assert manager.tr("Left curve") == "Linkskurve"
+    assert manager.tr("Right curve") == "Rechtskurve"
+    assert manager.tr("{count} elements selected.", count=2) == "2 Elemente ausgewählt."
 
 
 def test_english_source_strings_are_fallback():

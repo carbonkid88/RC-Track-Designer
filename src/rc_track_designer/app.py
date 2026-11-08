@@ -14,7 +14,7 @@ def main() -> int:
     app.setOrganizationName("RC Track Designer")
     app.setOrganizationDomain("rc-track-designer.org")
     app.setApplicationName("RC Track Designer")
-    app.setApplicationVersion("0.1.1")
+    app.setApplicationVersion("0.2.0")
     window = MainWindow()
     window.show()
     return app.exec()

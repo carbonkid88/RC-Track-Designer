@@ -53,6 +53,8 @@ def apply_theme(app: QApplication, name: str) -> dict[str, str]:
         QMenu::item {{ padding: 7px 28px 7px 12px; }}
         QToolBar {{ background: {colors['panel_alt']}; border: 1px solid {colors['border']}; spacing: 4px; padding: 5px; }}
         QToolBar QLabel {{ color: {colors['text']}; font-weight: 600; padding: 0 3px; }}
+        QFrame#applicationLogoPanel {{ background: {colors['panel_alt']}; border: 1px solid {colors['border']}; }}
+        QLabel#applicationLogo {{ border: none; background: transparent; padding: 0; }}
         QToolButton, QPushButton {{
             color: white; min-height: 26px; padding: 4px 10px; border-radius: 4px;
             border: 1px solid {colors['border']};
