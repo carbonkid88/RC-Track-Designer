@@ -109,3 +109,129 @@ Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übe
 - Verbundene Elementgruppen können gemeinsam verschoben, aber noch nicht als Gruppe gedreht werden.
 - Hilfslinien können noch nicht gesperrt werden.
 - Wenn beide möglichen Bogenlagen beim automatischen Weiterbauen gleich gut passen, wählt der Editor deterministisch eine davon. Die Kurve kann anschließend gelöst, frei gedreht und über den gewünschten Anschluss neu angedockt werden.
+
+---
+
+# RC Track Designer — English
+
+RC Track Designer v0.3.0 is a scale-accurate 2D layout editor for RC car race
+tracks. Metres are used internally, and curve radii refer to the track
+centreline.
+
+## Installation and startup
+
+Python 3.11 or newer is required when running from source.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -e ".[test]"
+.venv\Scripts\python -m rc_track_designer
+```
+
+The development checkout can also be started without installation:
+
+```powershell
+$env:PYTHONPATH = "src"
+.venv\Scripts\python -m rc_track_designer
+```
+
+## Basic operation
+
+- `File > New` creates a track area with the specified length and width.
+- Select a straight or a neutral curve angle from the upper palette, then click inside the track area to place it. `Esc` ends placement mode.
+- Click to select an element and drag to move it. The toolbar or `Ctrl+Left`/`Ctrl+Right` rotates by 5°. For one selected segment, the plain `Left`/`Right` arrow keys rotate directly; hold the key for continuous rotation. `Delete` or `Delete selection` in the context menu removes the selection.
+- Track width, straight length and centreline radius apply to new elements and also change the selected element.
+- Straight lengths and curve radii can be adjusted in 0.5 m steps with the plus/minus buttons.
+- The minimum permitted centreline radius equals half the track width. The inner edge may converge at one point, but it may not pass the curve centre or intersect itself.
+- Track-area length and width can be changed from the toolbar at any time; the view is fitted again afterwards.
+- Use the mouse wheel to zoom. Pan with the middle mouse button or `Space` + left mouse button. Press `F` to fit the track area.
+- Rulers along the upper X-axis and left Y-axis display metre positions for the current zoom level.
+- Magenta guides can be dragged from the rulers and snap in 0.5 m steps. Existing guides can be moved again or removed by dragging them out of the area or by right-clicking.
+- Projects are saved and loaded as versioned `*.rct.json` files.
+- Under `View > Settings`, choose the light or dark theme and switch between German and English. The selection is retained.
+
+## Smart Track Building
+
+- Free connectors are blue, the active free connector is orange, and connected connectors are green.
+- Click any free start or end connector and then select an element from the palette. The new element is appended with the correct tangent, and its opposite free connector becomes active.
+- Manually moved elements snap to suitable free connectors within a fixed screen-pixel distance. This distance is independent of zoom; orange rings preview an upcoming snap.
+- The same visible magnetic range applies while dragging a free connector. Where tracks are close together, selection is based on the centreline nearest to the click.
+- Snapping aligns a nearby compatible connector exactly to the tangent, even if the moving element was previously rotated to a very different angle. Curves are consistently shown as `Curve` in the properties panel.
+- Connectors are direction-neutral: start–end, start–start and end–end connections are supported. For two connectors of the same type, the editor automatically accounts for their opposite directed tangents.
+- New and edited elements, including the complete track width, must remain within the track area.
+- Overlaps do not block placement, dragging, rotation or snapping. Instead, all involved elements receive a red-and-white warning outline. Normally connected neighbours are not treated as conflicts.
+- Moving one connected element releases its connections without moving neighbouring elements. Deleting it makes neighbouring connectors free again.
+- Changing the length of a straight with one connected end moves only the free end; the connected end stays fixed. Radius and angle changes on one-sided connected curves follow the same rule.
+- Drag the free connector of a one-sided connected element to resize it. Straights snap to 0.5 m lengths; curves snap to 0.5 m radii and 5° angles. Releasing the handle on a geometrically compatible free connector closes the connection.
+- To close an open track automatically, mark its two free connectors with `Ctrl+click`, then choose `Edit > Close track…` or the matching context-menu command. A general local geometry solver adjusts neighbouring lengths, radii and curve angles within valid limits where necessary. A preview lists every change; all changes are applied as one Undo/Redo step.
+- Release an existing connection by double-clicking or right-clicking its green connector. Releasing can be undone and redone.
+- Select multiple elements with `Shift + click`. Dragging moves the complete selection while retaining internal connections.
+- A moved selection can snap to an element outside the selection through one of its free outer connectors. The group is aligned as one rigid body and retains its internal connections.
+- On empty space, hold the left mouse button and draw a selection rectangle. Hold `Shift` to add the enclosed elements to the current selection.
+- `Ctrl+C` copies the selection and `Ctrl+V` pastes it with new IDs and a 0.5 m offset. Internal connections in copied groups are retained; connections to elements outside the copied selection are not copied.
+- Elements rotate as rigid bodies around the midpoint of their track centreline. Both connectors move with the element, and existing connections are released before rotation. Straights and curves rotate freely through 360° and can then snap through either free connector. A small orange cross marks the rotation centre for a single selected element.
+- The properties panel provides numerical position, rotation, width, length, radius and curve angle.
+- `Ctrl+Z` undoes changes and `Ctrl+Y` redoes them.
+- `Esc` also works while an input field has focus: it ends placement mode or clears the current selection. An integrated quick guide is available under `Help > User guide` (`F1`).
+
+Start and end points are marked in blue. Each element stores its start position
+and start tangent; the end position and end tangent are calculated exactly.
+Connections and tangent alignment are persisted in the project file.
+
+## Tests
+
+```powershell
+.venv\Scripts\python -m pytest
+```
+
+## Building the portable Windows beta
+
+The reproducible PyInstaller one-folder configuration and full build procedure
+are documented in [BUILD_WINDOWS.md](BUILD_WINDOWS.md). Run the build,
+including tests and ZIP creation, with:
+
+```powershell
+.\build_windows.ps1
+```
+
+A ready-to-use portable Windows 64-bit package is also available from the
+[GitHub Releases page](https://github.com/carbonkid88/RC-Track-Designer/releases).
+It does not require a separate Python or PySide6 installation.
+
+## License
+
+RC Track Designer may be used free of charge for private, educational,
+club-related and other non-commercial purposes. Redistribution and modification
+are permitted under the conditions stated in the license. Commercial use
+requires the author's prior written permission. The complete German and English
+license text is available in [LICENSE.txt](LICENSE.txt) and in the application
+under `Help > License`.
+
+## Contributing additional languages
+
+English source strings are the stable translation keys. Translations are stored
+as UTF-8 JSON files in `src/rc_track_designer/locales`. Additional language
+files can also be placed in the user directory shown by the Settings dialog and
+will then appear in the language selector.
+
+A language file has this structure:
+
+```json
+{
+  "code": "fr",
+  "name": "Français",
+  "translations": {
+    "Save": "Enregistrer",
+    "Open…": "Ouvrir…"
+  }
+}
+```
+
+Missing entries fall back to English, so translations can be completed
+incrementally without preventing application startup.
+
+## Known limitations in v0.3.0
+
+- Connected element groups can be moved together, but they cannot yet be rotated as a group.
+- Guides cannot yet be locked.
+- If both possible curve orientations are equally suitable during automatic continuation, the editor deterministically chooses one. The curve can then be released, freely rotated and snapped through the desired connector.
