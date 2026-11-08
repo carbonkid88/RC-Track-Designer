@@ -224,21 +224,21 @@ class MainWindow(QMainWindow):
         palette_widget.setObjectName("elementPalette")
         palette_layout = QVBoxLayout(palette_widget)
         palette_layout.setContentsMargins(2, 1, 2, 1); palette_layout.setSpacing(3)
-        left_row = QHBoxLayout(); left_row.setContentsMargins(0, 0, 0, 0); left_row.setSpacing(4)
-        right_row = QHBoxLayout(); right_row.setContentsMargins(0, 0, 0, 0); right_row.setSpacing(4)
-        self.left_label = QLabel(f" {tr('Left curves:')} "); self.left_label.setFixedWidth(105); left_row.addWidget(self.left_label)
+        curve_row = QHBoxLayout(); curve_row.setContentsMargins(0, 0, 0, 0); curve_row.setSpacing(4)
+        self.curve_label = QLabel(f" {tr('Curves:')} ")
+        self.curve_label.setFixedWidth(105)
+        curve_row.addWidget(self.curve_label)
+        self.curve_actions = []
         for angle in range(5, 91, 5):
-            action = QAction(f"{angle}°", self); action.triggered.connect(lambda checked=False, a=angle: self.canvas.set_placement("left", a))
-            button = QToolButton(); button.setFixedWidth(38); button.setDefaultAction(action); left_row.addWidget(button)
-        left_row.addStretch()
-        self.right_label = QLabel(f" {tr('Right curves:')} ")
-        # Einrückung richtet beide Winkelreihen optisch aneinander aus.
-        self.right_label.setFixedWidth(105); right_row.addWidget(self.right_label)
-        for angle in range(5, 91, 5):
-            action = QAction(f"{angle}°", self); action.triggered.connect(lambda checked=False, a=angle: self.canvas.set_placement("right", a))
-            button = QToolButton(); button.setFixedWidth(38); button.setDefaultAction(action); right_row.addWidget(button)
-        right_row.addStretch()
-        palette_layout.addLayout(left_row); palette_layout.addLayout(right_row)
+            action = QAction(f"{angle}°", self)
+            action.triggered.connect(
+                lambda checked=False, a=angle: self.canvas.set_placement("curve", a)
+            )
+            self.curve_actions.append(action)
+            button = QToolButton(); button.setFixedWidth(38); button.setDefaultAction(action)
+            curve_row.addWidget(button)
+        curve_row.addStretch()
+        palette_layout.addLayout(curve_row)
         palette.addWidget(palette_widget)
         palette.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.logo_panel = QFrame(self)
@@ -343,8 +343,9 @@ class MainWindow(QMainWindow):
             angle_spin.blockSignals(False)
             self.property_spins["radius"].setMinimum(0.1)
             return
-        type_source = {"straight": "Straight", "left": "Left curve", "right": "Right curve"}
-        self.element_type_value.setText(self.tr_text(type_source[element.kind]))
+        self.element_type_value.setText(
+            self.tr_text("Straight" if element.kind == "straight" else "Curve")
+        )
         values = {"x": element.start.x, "y": element.start.y, "heading_deg": element.heading_deg,
                   "width": element.width, "length": element.length, "radius": element.radius,
                   "angle_deg": element.angle_deg if element.kind != "straight" else 0.0}
@@ -475,8 +476,7 @@ class MainWindow(QMainWindow):
         lines = []
         for element_id, name, before, after in proposal.changed:
             element = self.canvas.project.element_by_id(element_id)
-            element_name = tr({"straight": "Straight", "left": "Left curve",
-                               "right": "Right curve"}[element.kind])
+            element_name = tr("Straight" if element.kind == "straight" else "Curve")
             unit = "°" if name == "angle_deg" else " m"
             lines.append(
                 f"• {element_name} — {parameter_names[name]}: "
@@ -508,8 +508,8 @@ class MainWindow(QMainWindow):
         browser.setOpenExternalLinks(True)
         sections = (
             ("Create a track area", "Create a new project and enter the length and width of the available track area. The internal unit is metres."),
-            ("Place and connect elements", "Choose a straight or curve from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Green connectors are connected; the orange connector is active."),
-            ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. Esc cancels placement or clears the selection."),
+            ("Place and connect elements", "Choose a straight or neutral curve angle from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Curves rotate through 360 degrees and can snap using either endpoint. Green connectors are connected; the orange connector is active."),
+            ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. A selected segment rotates 5 degrees with the Left and Right arrow keys; hold a key down for continuous rotation. Right-click a selected segment to delete the selection. Esc cancels placement or clears the selection."),
             ("Close gaps and move groups", "Drag the free connector of a one-sided connected element to change its length, radius or curve angle. Release it near a compatible connector to close the gap. A selected connected group moves as one rigid unit and can snap to an external free connector."),
             ("Close an open track", "Select the two free connectors of one open track with Ctrl+click. Choose Edit > Close track or use the right-click menu. The preview lists local length, radius and angle adjustments; nothing changes until you confirm."),
             ("Navigate and organise", "Zoom with the mouse wheel. Pan with the middle mouse button or Space plus the left mouse button. Drag guides from the rulers; remove a guide with the right mouse button."),
@@ -583,8 +583,7 @@ class MainWindow(QMainWindow):
                              (self.view_menu, "View"), (self.help_menu, "Help")):
             menu.setTitle(tr(source))
         self.elements_label.setText(f" {tr('Elements:')} ")
-        self.left_label.setText(f" {tr('Left curves:')} ")
-        self.right_label.setText(f" {tr('Right curves:')} ")
+        self.curve_label.setText(f" {tr('Curves:')} ")
         self.width_label.setText(f" {tr('Track width:')} ")
         self.length_label.setText(f" {tr('Straight length:')} ")
         self.radius_label.setText(f" {tr('Centerline radius:')} ")

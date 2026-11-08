@@ -1,6 +1,6 @@
 # RC Track Designer
 
-RC Track Designer v0.2.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Fahrbahnmittellinie.
+RC Track Designer v0.3.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Fahrbahnmittellinie.
 
 ## Installation und Start
 
@@ -22,8 +22,8 @@ $env:PYTHONPATH = "src"
 ## Bedienung
 
 - `Datei > Neu` legt einen Streckenbereich mit Länge und Breite an.
-- Oben Gerade oder Links-/Rechtskurve wählen und zum Platzieren in den Streckenbereich klicken. `Esc` beendet den Platziermodus.
-- Klicken wählt ein Element; Ziehen verschiebt es. Werkzeugleiste oder `Strg+Links`/`Strg+Rechts` dreht um 5°. `Entf` löscht.
+- Oben eine Gerade oder einen neutralen Kurvenwinkel wählen und zum Platzieren in den Streckenbereich klicken. `Esc` beendet den Platziermodus.
+- Klicken wählt ein Element; Ziehen verschiebt es. Werkzeugleiste oder `Strg+Links`/`Strg+Rechts` dreht um 5°. Bei einem einzeln ausgewählten Segment drehen die Pfeiltasten `Links`/`Rechts` direkt; Gedrückthalten dreht kontinuierlich weiter. `Entf` oder `Auswahl löschen` im Rechtsklick-Menü löscht die Auswahl.
 - Fahrbahnbreite, Geradenlänge und Mittellinienradius gelten für neue Elemente und ändern zugleich das ausgewählte Element.
 - Geradenlängen und Kurvenradien lassen sich über die Plus-/Minus-Schaltflächen in 0,5-m-Schritten ändern.
 - Der kleinste zulässige Mittellinienradius entspricht der halben Fahrbahnbreite. Die innere Fahrbahnkante darf dabei in einem Punkt zusammenlaufen, aber nicht über den Kurvenmittelpunkt hinauslaufen oder sich selbst überschneiden.
@@ -40,8 +40,8 @@ $env:PYTHONPATH = "src"
 - Einen freien Anfangs- oder Endanschluss anklicken und danach ein Element aus der Palette wählen. Das neue Element wird tangential korrekt angefügt; sein gegenüberliegender freier Anschluss wird automatisch aktiv.
 - Manuell verschobene Elemente docken innerhalb einer festen Bildschirmdistanz an passende freie Gegenanschlüsse an. Die Fangdistanz bleibt beim Zoomen gleich; orange Ringe zeigen ein bevorstehendes Einrasten an.
 - Beim Ziehen eines freien Anschlusses gilt bis zum Loslassen derselbe gut sichtbare magnetische Fangbereich. Bei dicht nebeneinanderliegenden Fahrbahnen wird das Element mit der zum Klick nächstgelegenen Mittellinie ausgewählt.
-- Beim Einrasten wird ein naher kompatibler Anfang-/Endanschluss exakt tangential ausgerichtet, auch wenn das bewegte Element vorher deutlich anders gedreht war. Die Eigenschaften zeigen den unveränderlichen Elementtyp als Gerade, Links- oder Rechtskurve an.
-- Nur geometrisch und in Fahrtrichtung passende Anfang-Ende-Paare können verbunden werden.
+- Beim Einrasten wird ein naher kompatibler Anschluss exakt tangential ausgerichtet, auch wenn das bewegte Element vorher deutlich anders gedreht war. Kurven werden im Eigenschaftenbereich einheitlich als „Kurve“ bezeichnet.
+- Anschlüsse sind richtungsneutral: Anfang–Ende, Anfang–Anfang und Ende–Ende sind möglich. Bei gleichnamigen Anschlüssen berücksichtigt der Editor die entgegengesetzte gerichtete Tangente automatisch.
 - Neue oder bearbeitete Elemente müssen einschließlich ihrer vollständigen Fahrbahnbreite innerhalb des Streckenbereichs liegen.
 - Überlappungen blockieren Platzieren, Ziehen, Drehen oder Andocken nicht. Alle beteiligten Elemente erhalten stattdessen eine rot-weiße Warnkontur; regulär miteinander verbundene Nachbarelemente gelten nicht als Konflikt.
 - Beim Verschieben eines verbundenen Elements werden dessen Verbindungen gelöst, ohne Nachbarelemente mitzubewegen. Beim Löschen werden Nachbaranschlüsse wieder frei.
@@ -53,12 +53,12 @@ $env:PYTHONPATH = "src"
 - Eine gemeinsam verschobene Auswahl kann über einen ihrer freien äußeren Anschlüsse magnetisch an ein Element außerhalb der Auswahl andocken. Die Gruppe wird dafür als starre Einheit ausgerichtet; interne Verbindungen bleiben erhalten.
 - Auf freier Fläche des Streckenbereichs kann mit gedrückter linker Maustaste ein Auswahlrahmen aufgezogen werden. `Umschalt` ergänzt die eingerahmten Elemente zur bestehenden Auswahl.
 - `Strg+C` kopiert die Auswahl, `Strg+V` fügt sie um 0,5 m versetzt mit neuen IDs ein. Bei kopierten Gruppen bleiben interne Verbindungen erhalten; Verbindungen zu nicht kopierten Elementen werden nicht übernommen.
-- Elemente drehen als starrer Körper um die Mitte ihrer Fahrbahnmittellinie. Beide Anschlüsse bewegen sich dabei mit; verbundene Elemente werden vor dem Drehen automatisch gelöst. Geraden sind frei um 360° drehbar. Links- und Rechtskurven sind auf ±90° um ihre Einbau- oder letzte Andockrichtung begrenzt, damit ihre Anschlüsse nicht die relative Seite tauschen. Ein kleines orangefarbenes Kreuz markiert bei Einzelauswahl das Drehzentrum.
+- Elemente drehen als starrer Körper um die Mitte ihrer Fahrbahnmittellinie. Beide Anschlüsse bewegen sich dabei mit; verbundene Elemente werden vor dem Drehen automatisch gelöst. Geraden und Kurven sind frei um 360° drehbar und können anschließend über jeden freien Anschluss andocken. Ein kleines orangefarbenes Kreuz markiert bei Einzelauswahl das Drehzentrum.
 - Das Eigenschaftenfenster erlaubt numerische Position, Drehung, Breite, Länge, Radius und Kurvenwinkel.
 - `Strg+Z` macht Bearbeitungen rückgängig, `Strg+Y` stellt sie wieder her.
 - `Esc` funktioniert auch bei Fokus in einem Eingabefeld: Ein laufender Platziermodus wird beendet beziehungsweise die aktuelle Auswahl aufgehoben. Unter `Hilfe > Bedienungsanleitung` (`F1`) steht eine integrierte Kurzanleitung bereit.
 
-Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangsposition und Anfangstangente; Endposition und Endtangente werden exakt berechnet. Das Modell ist damit auf späteres magnetisches Verbinden vorbereitet.
+Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangsposition und Anfangstangente; Endposition und Endtangente werden exakt berechnet. Verbindungen und Tangentenausrichtung werden im Projekt gespeichert.
 
 ## Tests
 
@@ -94,7 +94,8 @@ Eine Sprachdatei hat dieses Format:
 
 Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übersetzungen schrittweise ergänzt werden, ohne den Programmstart zu verhindern.
 
-## Bekannte Einschränkungen in v0.2.0
+## Bekannte Einschränkungen in v0.3.0
 
 - Verbundene Elementgruppen können gemeinsam verschoben, aber noch nicht als Gruppe gedreht werden.
 - Hilfslinien können noch nicht gesperrt werden.
+- Wenn beide möglichen Bogenlagen beim automatischen Weiterbauen gleich gut passen, wählt der Editor deterministisch eine davon. Die Kurve kann anschließend gelöst, frei gedreht und über den gewünschten Anschluss neu angedockt werden.

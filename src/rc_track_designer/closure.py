@@ -77,10 +77,17 @@ def _layout(elements: list[tuple[TrackElement, str]], anchor: Pose,
     for (index, name), value in zip(variables, values):
         setattr(elements[index][0], name, value)
     pose = anchor
+    previous_exit: ConnectorRef | None = None
     for element, entry in elements:
+        entry_connector = ConnectorRef(element.id, entry)
+        if previous_exit is not None:
+            pose = TrackProject.connection_target_pose(
+                entry_connector, previous_exit, pose
+            )
         element.align_endpoint(entry, pose)
         exit_endpoint = "end" if entry == "start" else "start"
         pose = element.pose_at(exit_endpoint)
+        previous_exit = ConnectorRef(element.id, exit_endpoint)
     return pose
 
 
@@ -184,13 +191,15 @@ def _attempt(project: TrackProject, path: list[tuple[TrackElement, str]],
 
 def propose_closure(project: TrackProject, first: ConnectorRef,
                     second: ConnectorRef) -> ClosureProposal | None:
-    if first.endpoint == second.endpoint or not project.is_free(first) or not project.is_free(second):
+    if not project.is_free(first) or not project.is_free(second):
         return None
     for target_connector, adjustable_connector in ((first, second), (second, first)):
         path = _ordered_path(project, target_connector, adjustable_connector)
         if not path:
             continue
-        target = project.connector_pose(target_connector)
+        target = project.connector_alignment_pose(
+            adjustable_connector, target_connector
+        )
         for size in range(1, min(8, len(path)) + 1):
             attempt = _attempt(project, path, target, size)
             if attempt is None:

@@ -79,6 +79,52 @@ def test_middle_mouse_still_activates_pan():
     canvas.close()
 
 
+def test_plain_arrow_keys_rotate_a_selected_segment_and_accept_auto_repeat():
+    app, canvas = make_canvas()
+    curve = TrackElement("left", Point(10, 8), heading_deg=20,
+                         radius=3, angle_deg=40)
+    canvas.project.elements.append(curve)
+    canvas.selected = curve
+    canvas.selected_ids = {curve.id}
+
+    QTest.keyClick(canvas, Qt.Key.Key_Left)
+    assert canvas.selected.heading_deg == 25
+    QTest.keyClick(canvas, Qt.Key.Key_Right)
+    assert canvas.selected.heading_deg == 20
+
+    QTest.keyPress(canvas, Qt.Key.Key_Left)
+    QTest.keyPress(canvas, Qt.Key.Key_Left)
+    QTest.keyRelease(canvas, Qt.Key.Key_Left)
+    assert canvas.selected.heading_deg == 30
+
+    straight = TrackElement("straight", Point(4, 4), heading_deg=15)
+    canvas.project.elements.append(straight)
+    canvas.selected = straight
+    canvas.selected_ids = {straight.id}
+    QTest.keyClick(canvas, Qt.Key.Key_Left)
+    assert canvas.selected.heading_deg == 20
+    canvas.close()
+
+
+def test_context_menu_can_delete_selected_segment_and_undo_restores_it():
+    app, canvas = make_canvas()
+    element = TrackElement("straight", Point(4, 5), length=5)
+    canvas.project.elements.append(element)
+    canvas.selected = element
+    canvas.selected_ids = {element.id}
+
+    menu = canvas._build_context_menu(None, None, can_delete=True)
+    delete_action = next(action for action in menu.actions()
+                         if action.text() == "Delete selection")
+    delete_action.trigger()
+
+    assert canvas.project.elements == []
+    canvas.undo_stack.undo()
+    assert len(canvas.project.elements) == 1
+    assert canvas.project.elements[0].id == element.id
+    canvas.close()
+
+
 def test_normal_left_mouse_keeps_element_selection_and_dragging():
     app, canvas = make_canvas()
     element = TrackElement("straight", Point(5, 5), length=8)
@@ -151,6 +197,22 @@ def test_active_start_connector_appends_backwards_and_advances_to_new_start():
     canvas.close()
 
 
+def test_neutral_curve_palette_appends_a_fitting_bend_direction():
+    app, canvas = make_canvas()
+    first = TrackElement("straight", Point(10, 8), heading_deg=0, length=5)
+    canvas.project.elements.append(first)
+    canvas.active_connector = ConnectorRef(first.id, "end")
+
+    canvas.set_placement("curve", 40)
+
+    added = canvas.project.elements[-1]
+    assert added.kind in {"left", "right"}
+    assert added.angle_deg == 40
+    assert canvas.project.connection_for(ConnectorRef(first.id, "end")) is not None
+    assert added.start_pose == first.end_pose
+    canvas.close()
+
+
 def test_snapping_distance_is_in_screen_pixels_and_aligns_tangent():
     app, canvas = make_canvas()
     for scale in (5.0, 50.0):
@@ -167,6 +229,29 @@ def test_snapping_distance_is_in_screen_pixels_and_aligns_tangent():
     canvas.project.elements.append(third)
     assert canvas._snap_element(third)
     assert third.heading_deg == 0
+    canvas.close()
+
+
+def test_curve_can_snap_end_to_end_with_opposite_directed_tangents():
+    app, canvas = make_canvas()
+    canvas.project.hall_length = 30
+    canvas.project.hall_width = 20
+    target = TrackElement("right", Point(22.5, 11), heading_deg=0,
+                          radius=1.5, angle_deg=90, width=2)
+    moving = TrackElement("left", Point(22.5, 7.9), heading_deg=0,
+                          radius=1.5, angle_deg=90, width=2)
+    canvas.project.elements.extend([target, moving])
+
+    assert canvas._snap_element(moving)
+
+    connection = canvas.project.connection_for(ConnectorRef(moving.id, "end"))
+    assert connection is not None
+    assert {connection.first, connection.second} == {
+        ConnectorRef(moving.id, "end"), ConnectorRef(target.id, "end")
+    }
+    assert isclose(moving.end_pose.point.x, target.end_pose.point.x, abs_tol=1e-9)
+    assert isclose(moving.end_pose.point.y, target.end_pose.point.y, abs_tol=1e-9)
+    canvas.project.validate_connections()
     canvas.close()
 
 
@@ -334,7 +419,7 @@ def test_place_rotate_delete_and_properties_are_undoable():
     canvas.close()
 
 
-def test_curve_rotates_around_midpoint_without_exceeding_placement_direction():
+def test_curve_rotates_freely_around_midpoint():
     app, canvas = make_canvas()
     curve = TrackElement("left", Point(15, 10), heading_deg=0, radius=4, angle_deg=35)
     canvas.project.elements.append(curve)
@@ -346,12 +431,12 @@ def test_curve_rotates_around_midpoint_without_exceeding_placement_direction():
     for _ in range(20):
         canvas.rotate_selected(5)
 
-    assert canvas.selected.heading_deg == 90
+    assert canvas.selected.heading_deg == 100
     assert canvas.selected.start != original_start
     assert isclose(canvas.selected.centerline_midpoint.x, pivot.x, abs_tol=1e-9)
     assert isclose(canvas.selected.centerline_midpoint.y, pivot.y, abs_tol=1e-9)
     canvas.undo_stack.undo()
-    assert canvas.selected.heading_deg == 85
+    assert canvas.selected.heading_deg == 95
     canvas.close()
 
 
@@ -373,20 +458,23 @@ def test_numeric_rotation_uses_the_same_centerline_pivot():
     canvas.close()
 
 
-def test_curve_rotation_rejects_connector_side_swap_in_both_directions():
+def test_curve_rotation_is_unrestricted_around_its_centerline_midpoint():
     app, canvas = make_canvas()
     curve = TrackElement("left", Point(15, 10), heading_deg=210, radius=3, angle_deg=35)
     canvas.project.elements.append(curve)
     canvas.selected = curve
     canvas.selected_ids = {curve.id}
 
+    pivot = curve.centerline_midpoint
     assert canvas.manual_heading_allowed(curve, 300)
     assert canvas.manual_heading_allowed(curve, 120)
-    assert not canvas.manual_heading_allowed(curve, 305)
-    assert not canvas.manual_heading_allowed(curve, 115)
+    assert canvas.manual_heading_allowed(curve, 305)
+    assert canvas.manual_heading_allowed(curve, 115)
     canvas.change_selected("property", heading_deg=305)
-    assert canvas.selected.heading_deg == 210
-    assert canvas.undo_stack.count() == 0
+    assert canvas.selected.heading_deg == 305
+    assert isclose(canvas.selected.centerline_midpoint.x, pivot.x, abs_tol=1e-9)
+    assert isclose(canvas.selected.centerline_midpoint.y, pivot.y, abs_tol=1e-9)
+    assert canvas.undo_stack.count() == 1
     canvas.close()
 
 

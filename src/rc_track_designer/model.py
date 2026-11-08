@@ -40,8 +40,6 @@ class TrackConnection:
     def __post_init__(self) -> None:
         if self.first == self.second:
             raise ValueError("A connector cannot connect to itself")
-        if self.first.endpoint == self.second.endpoint:
-            raise ValueError("Only start-to-end connections are valid")
 
     def contains(self, connector: ConnectorRef) -> bool:
         return connector in (self.first, self.second)
@@ -228,15 +226,36 @@ class TrackProject:
     def is_free(self, connector: ConnectorRef) -> bool:
         return self.element_by_id(connector.element_id) is not None and self.connection_for(connector) is None
 
+    @staticmethod
+    def connection_target_pose(moving: ConnectorRef, stationary: ConnectorRef,
+                               stationary_pose: Pose) -> Pose:
+        """Pose a moving endpoint needs for an undirected tangent connection."""
+        heading = stationary_pose.heading_deg
+        if moving.endpoint == stationary.endpoint:
+            heading += 180
+        return Pose(stationary_pose.point, heading % 360)
+
+    def connector_alignment_pose(self, moving: ConnectorRef,
+                                 stationary: ConnectorRef) -> Pose:
+        return self.connection_target_pose(
+            moving, stationary, self.connector_pose(stationary)
+        )
+
+    def connector_alignment_error(self, first: ConnectorRef,
+                                  second: ConnectorRef) -> tuple[float, float]:
+        first_pose = self.connector_pose(first)
+        target = self.connector_alignment_pose(first, second)
+        distance = hypot(first_pose.point.x - target.point.x,
+                         first_pose.point.y - target.point.y)
+        angle = abs((first_pose.heading_deg - target.heading_deg + 180) % 360 - 180)
+        return distance, angle
+
     def connect(self, first: ConnectorRef, second: ConnectorRef) -> TrackConnection:
         if first.element_id == second.element_id: raise ValueError("Self-connections are not valid")
-        if first.endpoint == second.endpoint: raise ValueError("Only start-to-end connections are valid")
         if not self.is_free(first) or not self.is_free(second): raise ValueError("Both connectors must be free")
-        first_pose, second_pose = self.connector_pose(first), self.connector_pose(second)
-        distance = hypot(first_pose.point.x - second_pose.point.x, first_pose.point.y - second_pose.point.y)
-        angle = abs((first_pose.heading_deg - second_pose.heading_deg + 180) % 360 - 180)
+        distance, angle = self.connector_alignment_error(first, second)
         if distance > 1e-6 or angle > 1e-6:
-            raise ValueError("Connected endpoints must share position and tangent direction")
+            raise ValueError("Connected endpoints must share position and tangent line")
         connection = TrackConnection(first, second)
         self.connections.append(connection)
         return connection
@@ -259,15 +278,19 @@ class TrackProject:
         occupied: set[ConnectorRef] = set()
         ids = {item.id for item in self.elements}
         for connection in self.connections:
+            if connection.first.element_id == connection.second.element_id:
+                raise ValueError("Self-connections are not valid")
             for connector in (connection.first, connection.second):
                 if connector.element_id not in ids: raise ValueError("Connection references an unknown element")
                 if connector in occupied: raise ValueError("A connector cannot have multiple connections")
                 occupied.add(connector)
-            first_pose = self.connector_pose(connection.first); second_pose = self.connector_pose(connection.second)
-            if hypot(first_pose.point.x - second_pose.point.x, first_pose.point.y - second_pose.point.y) > 1e-6:
+            distance, angle = self.connector_alignment_error(
+                connection.first, connection.second
+            )
+            if distance > 1e-6:
                 raise ValueError("Connected endpoints do not share a position")
-            if abs((first_pose.heading_deg - second_pose.heading_deg + 180) % 360 - 180) > 1e-6:
-                raise ValueError("Connected endpoints do not share a tangent")
+            if angle > 1e-6:
+                raise ValueError("Connected endpoints do not share a tangent line")
 
     def element_fits_hall(self, element: TrackElement) -> bool:
         """Return whether the complete road surface lies inside the track area."""

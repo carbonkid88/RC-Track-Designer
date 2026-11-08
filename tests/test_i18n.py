@@ -17,6 +17,17 @@ def test_german_translation_and_formatting():
     assert manager.tr("Element type:") == "Elementtyp:"
     assert manager.tr("Left curve") == "Linkskurve"
     assert manager.tr("Right curve") == "Rechtskurve"
+    arrow_help = (
+        "Click an element to select and drag it. Hold Shift while clicking, or draw a "
+        "selection rectangle, to select several elements. Use the properties panel for "
+        "exact dimensions and positions. A selected segment rotates 5 degrees with the "
+        "Left and Right arrow keys; hold a key down for continuous rotation. Right-click "
+        "a selected segment to delete the selection. Esc cancels placement or clears the "
+        "selection."
+    )
+    assert "Pfeiltasten Links und Rechts" in manager.tr(arrow_help)
+    assert "kontinuierliches Drehen" in manager.tr(arrow_help)
+    assert "Rechtsklick" in manager.tr(arrow_help)
     assert manager.tr("{count} elements selected.", count=2) == "2 Elemente ausgewählt."
     assert manager.tr("Track area") == "Streckenbereich"
     assert manager.tr("Fit track area") == "Streckenbereich einpassen"

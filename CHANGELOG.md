@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0] - 2026-11-08
+
+### Hinzugefügt
+
+- Neutrale Kurvenpalette mit einem Winkel pro Schaltfläche statt getrennter Links-/Rechtskurven
+- Richtungsunabhängige Anschlüsse: Anfang kann mit Anfang und Ende mit Ende verbunden werden, wenn die gerichteten Tangenten entgegengesetzt liegen
+- JSON-Projektformat Version 3 für die neuen Anschlusskombinationen; Projekte der Versionen 1 und 2 bleiben ladbar
+- Regressionstests für beidseitiges Kurven-Andocken, neutrale Palette, 360°-Drehung und JSON-Roundtrips
+- Direkte Segmentdrehung in 5°-Schritten mit den Pfeiltasten einschließlich kontinuierlicher Tastaturwiederholung
+- Undo/Redo-fähiges Löschen der aktuellen Elementauswahl über das Rechtsklick-Menü
+
+### Geändert
+
+- Kurven lassen sich frei um 360° um ihre Fahrbahnmitte drehen und über beide Anschlüsse magnetisch anfügen
+- Beim automatischen Weiterbauen prüft der Editor beide Bogenlagen und Anschlussseiten und bevorzugt eine passende, möglichst konfliktarme Variante
+- Der Eigenschaftenbereich bezeichnet Kurven unabhängig von ihrer internen Geometrievariante einheitlich als „Kurve“
+- Anwendungsversion und gespeicherte Projektmetadaten auf 0.3.0 angehoben
+
+### Lizenz
+
+- Die zweisprachige nicht-kommerzielle Lizenz bleibt als `LICENSE.txt` Bestandteil des Projekts und ist weiterhin unter `Hilfe > Lizenz` vollständig einsehbar
+
 ## [0.2.0] - 2026-11-07
 
 ### Hinzugefügt

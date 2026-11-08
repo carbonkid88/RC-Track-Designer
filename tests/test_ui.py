@@ -85,6 +85,22 @@ def test_curve_angle_is_first_property_below_element_type():
     window.close()
 
 
+def test_palette_offers_one_neutral_curve_row_and_properties_hide_bend_side():
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    assert window.curve_label.text().strip() == "Kurven:"
+    assert len(window.curve_actions) == 18
+    window.curve_actions[6].trigger()
+    assert window.canvas.placement == ("curve", 35)
+
+    window._sync_properties(TrackElement("left", Point(4, 4), angle_deg=35))
+    assert window.element_type_value.text() == "Kurve"
+    window._sync_properties(TrackElement("right", Point(4, 4), angle_deg=35))
+    assert window.element_type_value.text() == "Kurve"
+    window.close()
+
+
 def test_properties_dock_can_be_restored_from_view_menu():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()

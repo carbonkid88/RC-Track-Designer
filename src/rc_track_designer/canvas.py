@@ -126,7 +126,7 @@ class TrackCanvas(QWidget):
         if kind == "straight":
             label = self._tr("straight")
         else:
-            label = self._tr("left curve {angle}°" if kind == "left" else "right curve {angle}°", angle=f"{angle:g}")
+            label = self._tr("curve {angle}°", angle=f"{angle:g}")
         self.status_message.emit(self._tr("Click inside the track area to place {element}; Esc cancels.", element=label))
         self.update()
 
@@ -185,12 +185,6 @@ class TrackCanvas(QWidget):
 
     def rotate_selected(self, degrees: float) -> None:
         if self.selected:
-            target_heading = (self.selected.heading_deg + degrees) % 360
-            if not self.manual_heading_allowed(self.selected, target_heading):
-                self.status_message.emit(self._tr(
-                    "Curves can be rotated at most 90° from their placement direction."
-                ))
-                return
             before = deepcopy(self.project)
             before_connector = self.active_connector
             before_selection = self._selection_state()
@@ -211,13 +205,7 @@ class TrackCanvas(QWidget):
 
     @staticmethod
     def manual_heading_allowed(element: TrackElement, heading_deg: float) -> bool:
-        if element.kind == "straight":
-            return True
-        reference = element.rotation_reference_deg
-        if reference is None:
-            reference = element.heading_deg
-        delta = (heading_deg - reference + 180) % 360 - 180
-        return -90.0 - 1e-9 <= delta <= 90.0 + 1e-9
+        return True
 
     def delete_selected(self) -> None:
         if self.selected and self.selected in self.project.elements:
@@ -311,13 +299,6 @@ class TrackCanvas(QWidget):
             return
         if "heading_deg" in values:
             target = values["heading_deg"] % 360
-            if not self.manual_heading_allowed(self.selected, target):
-                self._restore_without_signal(before, before_selection, before_connector)
-                self.selection_changed.emit(self.selected); self.update()
-                self.status_message.emit(self._tr(
-                    "Curves can be rotated at most 90° from their placement direction."
-                ))
-                return
             delta = (target - self.selected.heading_deg + 180) % 360 - 180
             self.selected.rotate(delta)
         if fixed_endpoint and fixed_pose:
@@ -405,14 +386,14 @@ class TrackCanvas(QWidget):
         for element in self.project.elements:
             if element.id == excluded.element_id:
                 continue
-            endpoint = "end" if excluded.endpoint == "start" else "start"
-            connector = ConnectorRef(element.id, endpoint)
-            if not self.project.is_free(connector):
-                continue
-            screen = self.world_to_screen(element.pose_at(endpoint).point)
-            distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
-            if distance <= best_distance:
-                best, best_distance = connector, distance
+            for endpoint in ("start", "end"):
+                connector = ConnectorRef(element.id, endpoint)
+                if not self.project.is_free(connector):
+                    continue
+                screen = self.world_to_screen(element.pose_at(endpoint).point)
+                distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
+                if distance <= best_distance:
+                    best, best_distance = connector, distance
         return best
 
     def _append_to_active(self, kind: str, angle: float) -> None:
@@ -420,18 +401,45 @@ class TrackCanvas(QWidget):
         if not connector or not self.project.is_free(connector): return
         before = deepcopy(self.project); before_connector = connector; before_selection = self._selection_state()
         target = self.project.connector_pose(connector)
-        new_endpoint = "start" if connector.endpoint == "end" else "end"
-        element = TrackElement(kind, target.point, width=self.default_width, length=self.default_length,
-                               radius=self.default_radius, angle_deg=angle)
-        element.align_endpoint(new_endpoint, target)
-        if not self.project.element_fits_hall(element):
+        kinds = ("left", "right") if kind == "curve" else (kind,)
+        preferred_endpoint = "start" if connector.endpoint == "end" else "end"
+        endpoints = (preferred_endpoint,
+                     "end" if preferred_endpoint == "start" else "start")
+        candidates = []
+        for candidate_kind in kinds:
+            for endpoint_priority, new_endpoint in enumerate(endpoints):
+                element = TrackElement(
+                    candidate_kind, target.point, width=self.default_width,
+                    length=self.default_length, radius=self.default_radius,
+                    angle_deg=angle,
+                )
+                new_connector = ConnectorRef(element.id, new_endpoint)
+                aligned_target = TrackProject.connection_target_pose(
+                    new_connector, connector, target
+                )
+                element.align_endpoint(new_endpoint, aligned_target)
+                if not self.project.element_fits_hall(element):
+                    continue
+                overlaps = sum(
+                    1 for other in self.project.elements
+                    if other.id != connector.element_id
+                    and self._shapes_overlap(self._road_shape(element),
+                                             self._road_shape(other))
+                )
+                candidates.append((overlaps, endpoint_priority,
+                                   element, new_connector))
+        if not candidates:
             self.status_message.emit(self._tr("The element would extend beyond the track area."))
             return
+        _overlaps, _priority, element, new_connector = min(
+            candidates, key=lambda item: (item[0], item[1])
+        )
         self.project.elements.append(element)
-        new_connector = ConnectorRef(element.id, new_endpoint)
         self.project.connect(connector, new_connector)
         self.selected = element; self.selected_ids = {element.id}
-        self.active_connector = ConnectorRef(element.id, "end" if new_endpoint == "start" else "start")
+        self.active_connector = ConnectorRef(
+            element.id, "end" if new_connector.endpoint == "start" else "start"
+        )
         self._commit_change(self._tr("Add connected element"), before, before_selection, before_connector)
 
     def _find_snap(self, element: TrackElement):
@@ -442,15 +450,19 @@ class TrackCanvas(QWidget):
             pose = element.pose_at(own_endpoint); screen = self.world_to_screen(pose.point)
             for other in self.project.elements:
                 if other.id == element.id: continue
-                opposite = "end" if own_endpoint == "start" else "start"
-                candidate = ConnectorRef(other.id, opposite)
-                if not self.project.is_free(candidate): continue
-                target = other.pose_at(opposite); target_screen = self.world_to_screen(target.point)
-                distance = hypot(screen.x() - target_screen.x(), screen.y() - target_screen.y())
-                angle = self._angle_difference(pose.heading_deg, target.heading_deg)
-                if distance <= self.snap_distance_px:
-                    score = distance + angle * 0.02
-                    if best is None or score < best[0]: best = (score, own, candidate, target)
+                for candidate_endpoint in ("start", "end"):
+                    candidate = ConnectorRef(other.id, candidate_endpoint)
+                    if not self.project.is_free(candidate): continue
+                    stationary = other.pose_at(candidate_endpoint)
+                    target = TrackProject.connection_target_pose(
+                        own, candidate, stationary
+                    )
+                    target_screen = self.world_to_screen(target.point)
+                    distance = hypot(screen.x() - target_screen.x(), screen.y() - target_screen.y())
+                    angle = self._angle_difference(pose.heading_deg, target.heading_deg)
+                    if distance <= self.snap_distance_px:
+                        score = distance + angle * 0.02
+                        if best is None or score < best[0]: best = (score, own, candidate, target)
         return best
 
     def _find_group_snap(self):
@@ -468,23 +480,26 @@ class TrackCanvas(QWidget):
                     continue
                 pose = element.pose_at(own_endpoint)
                 screen = self.world_to_screen(pose.point)
-                opposite = "end" if own_endpoint == "start" else "start"
                 for other in self.project.elements:
                     if other.id in selected_ids:
                         continue
-                    candidate = ConnectorRef(other.id, opposite)
-                    if not self.project.is_free(candidate):
-                        continue
-                    target = other.pose_at(opposite)
-                    target_screen = self.world_to_screen(target.point)
-                    distance = hypot(screen.x() - target_screen.x(),
-                                     screen.y() - target_screen.y())
-                    angle = self._angle_difference(pose.heading_deg,
-                                                   target.heading_deg)
-                    if distance <= self.snap_distance_px:
-                        score = distance + angle * 0.02
-                        if best is None or score < best[0]:
-                            best = (score, own, candidate, target)
+                    for candidate_endpoint in ("start", "end"):
+                        candidate = ConnectorRef(other.id, candidate_endpoint)
+                        if not self.project.is_free(candidate):
+                            continue
+                        stationary = other.pose_at(candidate_endpoint)
+                        target = TrackProject.connection_target_pose(
+                            own, candidate, stationary
+                        )
+                        target_screen = self.world_to_screen(target.point)
+                        distance = hypot(screen.x() - target_screen.x(),
+                                         screen.y() - target_screen.y())
+                        angle = self._angle_difference(pose.heading_deg,
+                                                       target.heading_deg)
+                        if distance <= self.snap_distance_px:
+                            score = distance + angle * 0.02
+                            if best is None or score < best[0]:
+                                best = (score, own, candidate, target)
         return best
 
     def _snap_group(self) -> bool:
@@ -714,8 +729,11 @@ class TrackCanvas(QWidget):
                 release_position, connector, self.snap_distance_px
             )
             if direct_target:
+                aligned_target = self.project.connector_alignment_pose(
+                    connector, direct_target
+                )
                 candidate = (0.0, connector, direct_target,
-                             self.project.connector_pose(direct_target))
+                             aligned_target)
         connected = False
         if candidate and candidate[1] == connector:
             _score, own, other, target = candidate
@@ -1035,7 +1053,8 @@ class TrackCanvas(QWidget):
             kind, angle = self.placement
             if 0 <= world.x <= self.project.hall_length and 0 <= world.y <= self.project.hall_width:
                 before = deepcopy(self.project); before_connector = self.active_connector; before_selection = self._selection_state()
-                element = TrackElement(kind, world, width=self.default_width, length=self.default_length,
+                element_kind = "left" if kind == "curve" else kind
+                element = TrackElement(element_kind, world, width=self.default_width, length=self.default_length,
                                        radius=self.default_radius, angle_deg=angle or 45.0)
                 if not self.project.element_fits_hall(element):
                     self.status_message.emit(self._tr("The element would extend beyond the track area."))
@@ -1121,10 +1140,11 @@ class TrackCanvas(QWidget):
                             before_selection, before_connector)
 
     def _build_context_menu(self, connector: ConnectorRef | None,
-                            guide: tuple[str, int, float] | None) -> QMenu | None:
+                            guide: tuple[str, int, float] | None,
+                            can_delete: bool = False) -> QMenu | None:
         connection = self.project.connection_for(connector) if connector else None
         can_close = len(self.closure_connectors) == 2
-        if not (connection or guide or can_close):
+        if not (connection or guide or can_close or can_delete):
             return None
         menu = QMenu(self)
         if can_close:
@@ -1141,17 +1161,31 @@ class TrackCanvas(QWidget):
             action.triggered.connect(
                 lambda checked=False, selected=guide: self._delete_guide(selected)
             )
+        if can_delete:
+            if menu.actions():
+                menu.addSeparator()
+            action = menu.addAction(self._tr("Delete selection"))
+            action.triggered.connect(self.delete_selected)
         return menu
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
         connector = self._connector_at(event.pos())
         guide = self._guide_at(QPointF(event.pos()))
         connection = self.project.connection_for(connector) if connector else None
+        clicked = (self.project.element_by_id(connector.element_id)
+                   if connector else self._hit_test(QPointF(event.pos())))
+        if clicked and clicked.id not in self.selected_ids:
+            self.selected = clicked
+            self.selected_ids = {clicked.id}
+            self.active_connector = connector if connector and self.project.is_free(connector) else None
+            self.selection_changed.emit(clicked)
+            self.update()
+        can_delete = bool(clicked and clicked.id in self.selected_ids)
         if guide and not connection and len(self.closure_connectors) != 2:
             self._delete_guide(guide)
             event.accept()
             return
-        menu = self._build_context_menu(connector, guide)
+        menu = self._build_context_menu(connector, guide, can_delete)
         if menu:
             menu.exec(event.globalPos())
             event.accept()
@@ -1317,6 +1351,14 @@ class TrackCanvas(QWidget):
             event.accept()
         elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected()
+        elif (event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right)
+              and event.modifiers() == Qt.KeyboardModifier.NoModifier
+              and self.selected is not None
+              and len(self.selected_ids) <= 1):
+            # Native key auto-repeat deliberately drives repeated 5° steps
+            # until the user releases the arrow key.
+            self.rotate_selected(5 if event.key() == Qt.Key.Key_Left else -5)
+            event.accept()
         elif event.key() == Qt.Key.Key_R:
             self.rotate_selected(-5 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 5)
         else:

@@ -6,6 +6,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from . import __version__
 from .ui import MainWindow
 
 
@@ -14,7 +15,7 @@ def main() -> int:
     app.setOrganizationName("RC Track Designer")
     app.setOrganizationDomain("rc-track-designer.org")
     app.setApplicationName("RC Track Designer")
-    app.setApplicationVersion("0.2.0")
+    app.setApplicationVersion(__version__)
     window = MainWindow()
     window.show()
     return app.exec()

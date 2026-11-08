@@ -15,12 +15,26 @@ def test_connect_requires_free_opposite_endpoints():
         project.connect(ConnectorRef(first.id, "end"), ConnectorRef(second.id, "start"))
 
 
-def test_same_endpoint_direction_is_rejected():
-    first = TrackElement("straight", Point(0, 0))
-    second = TrackElement("straight", Point(5, 0))
+def test_same_endpoint_connection_uses_opposite_directed_tangents():
+    first = TrackElement("straight", Point(5, 5), heading_deg=0)
+    second = TrackElement("straight", Point(5, 5), heading_deg=180)
     project = TrackProject(elements=[first, second])
-    with pytest.raises(ValueError, match="start-to-end"):
-        project.connect(ConnectorRef(first.id, "start"), ConnectorRef(second.id, "start"))
+
+    connection = project.connect(
+        ConnectorRef(first.id, "start"), ConnectorRef(second.id, "start")
+    )
+
+    assert connection.first.endpoint == connection.second.endpoint == "start"
+    project.validate_connections()
+
+
+def test_same_endpoint_with_same_directed_heading_is_rejected():
+    first = TrackElement("straight", Point(5, 5), heading_deg=0)
+    second = TrackElement("straight", Point(5, 5), heading_deg=0)
+    project = TrackProject(elements=[first, second])
+    with pytest.raises(ValueError, match="tangent line"):
+        project.connect(ConnectorRef(first.id, "start"),
+                        ConnectorRef(second.id, "start"))
 
 
 def test_contradictory_position_or_tangent_is_rejected():
