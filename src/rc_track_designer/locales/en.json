@@ -1,5 +1,19 @@
 {
   "code": "en",
   "name": "English",
-  "translations": {}
+  "translations": {
+    "Editing mode:": "Editing mode:",
+    "Add magnet point": "Add magnet point",
+    "Remove magnet point": "Remove magnet point",
+    "Move magnet point": "Move magnet point",
+    "Normal mode": "Normal mode",
+    "Indoor mode": "Indoor mode",
+    "Boundary straight": "Boundary straight",
+    "Boundary curve": "Boundary curve",
+    "Boundary curves:": "Boundary curves:",
+    "Boundary width:": "Boundary width:",
+    "Change editor mode": "Change editor mode",
+    "Choose an editing mode": "Choose an editing mode",
+    "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.": "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."
+  }
 }

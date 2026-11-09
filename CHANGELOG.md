@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0] - Unreleased
+
+### Hinzugefügt
+
+- Zusätzlicher Hallenmodus innerhalb derselben Anwendung mit umschaltbarer Begrenzungspalette
+- Anthrazitfarbener Hallenteppich, dezentes weißes Raster und durchgehend gelbe Begrenzungsgeometrie unabhängig vom Anwendungstheme
+- Gerade und neutrale Kurvenbegrenzungen von 5° bis 90° mit frei wählbarer Bogenlage
+- Begrenzungsbreiten 5, 10, 15, 20 und 25 cm; intern werden alle Abmessungen weiterhin in Metern gespeichert
+- Freistehende Begrenzungen, mehrere unabhängige Ketten, magnetisches Andocken und Smart Building an freien Anschlüssen
+- Projektformat Version 4 mit Bearbeitungsmodus und expliziter Elementkategorie
+- Zusätzliche, entlang gerader Begrenzungen verschiebbare Magnetpunkte mit Kontextmenü, gezielter Mitführung nur des direkt angedockten Elements, Undo/Redo und Projektspeicherung
+
+### Geändert
+
+- Projektdateien mit veralteten, geometrisch widersprüchlichen Verbindungsreferenzen werden wieder geöffnet; nur die ungültige Verbindung wird gelöst, sämtliche Elemente bleiben erhalten
+- Ein Moduswechsel verlangt bei ungespeicherten Änderungen zuerst das Speichern und öffnet den Zielmodus anschließend mit einem leeren Streckenbereich gleicher Abmessungen
+- Fahrbahn- und Begrenzungselemente verwenden gemeinsame Geometrie-, Auswahl-, Verbindungs- und Undo/Redo-Mechanismen, können aber nicht versehentlich miteinander verbunden werden
+- Projekte der Formatversionen 1 bis 3 werden weiterhin als normale Fahrbahnprojekte geladen, ohne Elemente umzuwandeln
+- Anwendungsversion zur Vorbereitung der getrennten v0.4.0-Entwicklung angehoben
+
 ## [0.3.0] - 2026-11-08
 
 ### Hinzugefügt

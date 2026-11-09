@@ -1,6 +1,16 @@
 # RC Track Designer
 
-RC Track Designer v0.3.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Fahrbahnmittellinie.
+RC Track Designer v0.4.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Mittellinie.
+
+## Normaler Modus und Hallenmodus
+
+- **Normaler Modus:** der bisherige Editor für gefüllte Fahrbahnelemente mit einstellbarer Fahrbahnbreite.
+- **Hallenmodus:** freier Editor für temporäre Indoor-Streckenbegrenzungen auf anthrazitfarbenem Hallenteppich. Begrenzungen werden als durchgehend gelbe, maßstabsgetreue Geometrie ohne automatisch gefüllte Fahrbahn dargestellt.
+- Die Moduswahl befindet sich in der Maßleiste. Vor dem Umschalten müssen ungespeicherte Änderungen gespeichert werden; Abbrechen lässt das aktuelle Projekt unverändert. Der gewählte Modus beginnt anschließend mit einem leeren Streckenbereich gleicher Abmessungen.
+- Gerade Begrenzungen verwenden Längen in Metern. Kurven verwenden Mittellinienradius in Metern und Winkel in Grad. Die Begrenzungsbreite wird als 5, 10, 15, 20 oder 25 cm eingegeben; intern werden alle Werte in Meter gespeichert.
+- Begrenzungen dürfen frei stehen, mehrere unabhängige Ketten bilden oder magnetisch verbunden werden. Sie verbinden sich ausschließlich mit anderen Begrenzungen, niemals mit normalen Fahrbahnelementen.
+- Mit einem Rechtsklick auf eine gerade Begrenzung lassen sich zusätzliche Magnetpunkte einfügen; ein Rechtsklick auf einen solchen Punkt entfernt ihn wieder. Die Punkte lassen sich entlang der Geraden verschieben und bewegen nur die unmittelbar daran angedockte Begrenzung mit. Deren weitere Verbindung wird dabei gelöst, damit der übrige Streckenverlauf unverändert bleibt. Außerdem bewegen, drehen und skalieren die Punkte sich mit ihrer Geraden.
+- Auswahl, Mehrfachauswahl, Verschieben, 360°-Drehung, Kopieren, Löschen und Undo/Redo funktionieren in beiden Modi gleich.
 
 ## Installation und Start
 
@@ -58,7 +68,7 @@ $env:PYTHONPATH = "src"
 - `Strg+Z` macht Bearbeitungen rückgängig, `Strg+Y` stellt sie wieder her.
 - `Esc` funktioniert auch bei Fokus in einem Eingabefeld: Ein laufender Platziermodus wird beendet beziehungsweise die aktuelle Auswahl aufgehoben. Unter `Hilfe > Bedienungsanleitung` (`F1`) steht eine integrierte Kurzanleitung bereit.
 
-Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangsposition und Anfangstangente; Endposition und Endtangente werden exakt berechnet. Verbindungen und Tangentenausrichtung werden im Projekt gespeichert.
+Anfangs- und Endpunkte sind blau markiert. Jedes Element speichert Anfangsposition und Anfangstangente; Endposition und Endtangente werden exakt berechnet. Verbindungen und Tangentenausrichtung werden im Projekt gespeichert. Projekte der Formatversionen 1 bis 3 bleiben ladbar. Enthält eine ältere Datei eine geometrisch veraltete Verbindungsreferenz, wird nur diese Verbindung gelöst; alle Streckenelemente bleiben erhalten.
 
 ## Tests
 
@@ -104,7 +114,7 @@ Eine Sprachdatei hat dieses Format:
 
 Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übersetzungen schrittweise ergänzt werden, ohne den Programmstart zu verhindern.
 
-## Bekannte Einschränkungen in v0.3.0
+## Bekannte Einschränkungen in v0.4.0
 
 - Verbundene Elementgruppen können gemeinsam verschoben, aber noch nicht als Gruppe gedreht werden.
 - Hilfslinien können noch nicht gesperrt werden.
@@ -114,9 +124,19 @@ Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übe
 
 # RC Track Designer — English
 
-RC Track Designer v0.3.0 is a scale-accurate 2D layout editor for RC car race
+RC Track Designer v0.4.0 is a scale-accurate 2D layout editor for RC car race
 tracks. Metres are used internally, and curve radii refer to the track
 centreline.
+
+## Normal and indoor modes
+
+- **Normal mode** retains the established editor for filled track elements and adjustable track width.
+- **Indoor mode** is a free barrier editor for temporary indoor layouts. It uses an anthracite carpet, a subtle white grid, and solid yellow scale-accurate barriers without generating a filled driving surface.
+- The mode selector is located in the dimensions toolbar. Unsaved changes must be saved before switching; cancelling keeps the current project unchanged. The selected mode then starts with an empty track area of the same dimensions.
+- Straight barrier length and curve centreline radius are entered in metres; curve angles use degrees. Barrier width is selected as 5, 10, 15, 20, or 25 cm and is always stored internally in metres.
+- Barriers may be freestanding, form multiple independent chains, or snap magnetically. They connect only to other barriers, never to normal track elements.
+- Right-click a straight barrier to add another magnet point; right-click that point to remove it. Added points can be dragged along the straight and carry only the directly attached barrier with them. Any further connection of that barrier is released so the rest of the layout remains unchanged. The points also move, rotate, and scale with their straight.
+- Selection, multi-selection, moving, full 360-degree rotation, copying, deletion, and Undo/Redo work consistently in both modes.
 
 ## Installation and startup
 
@@ -176,7 +196,10 @@ $env:PYTHONPATH = "src"
 
 Start and end points are marked in blue. Each element stores its start position
 and start tangent; the end position and end tangent are calculated exactly.
-Connections and tangent alignment are persisted in the project file.
+Connections and tangent alignment are persisted in the project file. Project
+format versions 1 through 3 remain loadable. If an older file contains a stale
+geometrically inconsistent connection reference, only that connection is
+released and all track elements are retained.
 
 ## Tests
 
@@ -230,7 +253,7 @@ A language file has this structure:
 Missing entries fall back to English, so translations can be completed
 incrementally without preventing application startup.
 
-## Known limitations in v0.3.0
+## Known limitations in v0.4.0
 
 - Connected element groups can be moved together, but they cannot yet be rotated as a group.
 - Guides cannot yet be locked.

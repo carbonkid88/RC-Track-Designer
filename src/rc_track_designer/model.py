@@ -28,8 +28,9 @@ class ConnectorRef:
     endpoint: str
 
     def __post_init__(self) -> None:
-        if self.endpoint not in {"start", "end"}:
-            raise ValueError("Connector endpoint must be 'start' or 'end'")
+        if (self.endpoint not in {"start", "end"}
+                and not self.endpoint.startswith("magnet:")):
+            raise ValueError("Unknown connector endpoint")
 
 
 @dataclass(frozen=True)
@@ -63,10 +64,14 @@ class TrackElement:
     angle_deg: float = 45.0
     id: str = field(default_factory=lambda: str(uuid4()))
     rotation_reference_deg: float | None = None
+    element_type: str = "track"
+    magnet_points: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.kind not in {"straight", "left", "right"}:
             raise ValueError(f"Unbekannter Elementtyp: {self.kind}")
+        if self.element_type not in {"track", "boundary"}:
+            raise ValueError(f"Unbekannte Elementkategorie: {self.element_type}")
         if self.width <= 0 or self.length <= 0 or self.radius <= 0:
             raise ValueError("Breite, Länge und Radius müssen positiv sein")
         if not 0 < self.angle_deg <= 360:
@@ -76,6 +81,11 @@ class TrackElement:
             self.rotation_reference_deg = self.heading_deg
         else:
             self.rotation_reference_deg %= 360
+        if self.magnet_points and (self.element_type != "boundary" or self.kind != "straight"):
+            raise ValueError("Additional magnet points require a straight boundary")
+        if any(not 0.0 < float(position) < 1.0
+               for position in self.magnet_points.values()):
+            raise ValueError("Magnet point positions must lie inside the element")
 
     @property
     def signed_angle_deg(self) -> float:
@@ -114,7 +124,21 @@ class TrackElement:
     def pose_at(self, endpoint: str) -> Pose:
         if endpoint == "start": return self.start_pose
         if endpoint == "end": return self.end_pose
+        if endpoint.startswith("magnet:"):
+            point_id = endpoint.split(":", 1)[1]
+            if point_id not in self.magnet_points:
+                raise ValueError("Unknown magnet point")
+            distance = self.length * self.magnet_points[point_id]
+            angle = radians(self.heading_deg)
+            return Pose(Point(self.start.x + distance * cos(angle),
+                              self.start.y + distance * sin(angle)),
+                        self.heading_deg % 360)
         raise ValueError("Endpoint must be 'start' or 'end'")
+
+    @property
+    def connector_names(self) -> tuple[str, ...]:
+        return ("start", "end", *(f"magnet:{point_id}"
+                                  for point_id in self.magnet_points))
 
     def align_endpoint(self, endpoint: str, target: Pose) -> None:
         if endpoint == "start":
@@ -179,6 +203,8 @@ class TrackElement:
             "heading_deg": self.heading_deg, "width": self.width,
             "length": self.length, "radius": self.radius, "angle_deg": self.angle_deg,
             "rotation_reference_deg": self.rotation_reference_deg,
+            "element_type": self.element_type,
+            "magnet_points": self.magnet_points,
         }
 
     @classmethod
@@ -191,6 +217,9 @@ class TrackElement:
             angle_deg=float(data.get("angle_deg", 45.0)),
             rotation_reference_deg=(float(data["rotation_reference_deg"])
                                     if data.get("rotation_reference_deg") is not None else None),
+            element_type=str(data.get("element_type", "track")),
+            magnet_points={str(key): float(value)
+                           for key, value in data.get("magnet_points", {}).items()},
         )
 
 
@@ -202,8 +231,11 @@ class TrackProject:
     connections: list[TrackConnection] = field(default_factory=list)
     guides_x: list[float] = field(default_factory=list)
     guides_y: list[float] = field(default_factory=list)
+    editor_mode: str = "normal"
 
     def __post_init__(self) -> None:
+        if self.editor_mode not in {"normal", "indoor"}:
+            raise ValueError("Unknown editor mode")
         if self.hall_length <= 0 or self.hall_width <= 0:
             raise ValueError("Streckenbereichsmaße müssen positiv sein")
         if any(not 0 <= value <= self.hall_length for value in self.guides_x):
@@ -252,10 +284,18 @@ class TrackProject:
 
     def connect(self, first: ConnectorRef, second: ConnectorRef) -> TrackConnection:
         if first.element_id == second.element_id: raise ValueError("Self-connections are not valid")
+        first_element = self.element_by_id(first.element_id)
+        second_element = self.element_by_id(second.element_id)
+        if (first_element is None or second_element is None
+                or first_element.element_type != second_element.element_type):
+            raise ValueError("Only elements of the same category can be connected")
         if not self.is_free(first) or not self.is_free(second): raise ValueError("Both connectors must be free")
         distance, angle = self.connector_alignment_error(first, second)
-        if distance > 1e-6 or angle > 1e-6:
+        if (first_element.element_type == "track"
+                and (distance > 1e-6 or angle > 1e-6)):
             raise ValueError("Connected endpoints must share position and tangent line")
+        if distance > 1e-6:
+            raise ValueError("Connected boundary endpoints must share a position")
         connection = TrackConnection(first, second)
         self.connections.append(connection)
         return connection
@@ -284,12 +324,16 @@ class TrackProject:
                 if connector.element_id not in ids: raise ValueError("Connection references an unknown element")
                 if connector in occupied: raise ValueError("A connector cannot have multiple connections")
                 occupied.add(connector)
+            first_element = self.element_by_id(connection.first.element_id)
+            second_element = self.element_by_id(connection.second.element_id)
+            if first_element.element_type != second_element.element_type:
+                raise ValueError("Connected elements must have the same category")
             distance, angle = self.connector_alignment_error(
                 connection.first, connection.second
             )
             if distance > 1e-6:
                 raise ValueError("Connected endpoints do not share a position")
-            if angle > 1e-6:
+            if first_element.element_type == "track" and angle > 1e-6:
                 raise ValueError("Connected endpoints do not share a tangent line")
 
     def element_fits_hall(self, element: TrackElement) -> bool:
