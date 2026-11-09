@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rc-track-designer"
-version = "0.3.0"
+version = "0.4.0"
 description = "Maßstabsgetreuer 2D-Editor für RC-Rennstrecken"
 readme = "README.md"
 license = {file = "LICENSE.txt"}

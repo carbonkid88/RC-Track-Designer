@@ -25,7 +25,7 @@ Das Skript führt standardmäßig alle Tests aus, leert ausschließlich die
 projektspezifischen PyInstaller-Ausgaben, baut die One-Folder-Distribution,
 prüft die erforderlichen Ressourcen und erzeugt anschließend:
 
-`artifacts\RC-Track-Designer_v0.3.0-beta1_win64.zip`
+`artifacts\RC-Track-Designer_v0.4.0-beta1_win64.zip`
 
 Zusätzlich wird eine gleichnamige `.sha256`-Datei geschrieben. Für einen rein
 technischen Wiederholungsbuild nach einem bereits erfolgreichen Testlauf kann
@@ -42,9 +42,19 @@ verarbeitet wird.
 - carbonKID-Logo
 - `LICENSE.txt`
 - `START_HERE.txt`
+- deutsche und englische Bedienungsinformationen in `README.md`
+- zweisprachige `RELEASE_NOTES_v0.4.0-beta1.md`
 
 PyInstaller legt Laufzeitdateien im Unterordner `_internal` ab. Lizenz und
 Startanleitung werden zusätzlich gut sichtbar in den Programmordner kopiert.
+
+## Beta-1-Prüfung
+
+Das Skript bricht ab, wenn die Anwendungsversion nicht exakt `0.4.0` ist oder
+eine erforderliche Ressource fehlt. Vor der Veröffentlichung müssen die ZIP und
+die zugehörige SHA-256-Datei gemeinsam bereitgestellt werden. Die Beta kann
+parallel zur v0.3.0 Beta entpackt werden, da Ordner- und ZIP-Namen eindeutig
+versioniert sind.
 
 ## Schreiborte zur Laufzeit
 

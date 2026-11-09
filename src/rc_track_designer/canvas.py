@@ -42,6 +42,11 @@ class TrackCanvas(QWidget):
         self._resize_before = None
         self._resize_before_selection = None
         self._resize_before_connector = None
+        self._magnet_drag_connector: ConnectorRef | None = None
+        self._magnet_drag_started = False
+        self._magnet_drag_before = None
+        self._magnet_drag_before_selection = None
+        self._magnet_drag_before_connector = None
         self._drag_ignored_pairs: set[frozenset[str]] = set()
         self._panning = False
         self._selecting_rect = False
@@ -64,10 +69,12 @@ class TrackCanvas(QWidget):
         self.active_connector: ConnectorRef | None = None
         self.closure_connectors: list[ConnectorRef] = []
         self.snap_distance_px = 34.0
+        self.indoor_snap_distance_px = 20.0
         self.connector_hit_distance_px = 10.0
         # A modest angular tolerance makes docking helpful without undoing a
         # deliberate manual rotation from far outside the target tangent.
         self.tangent_tolerance_deg = 30.0
+        self.indoor_tangent_tolerance_deg = 8.0
         self.snap_preview: tuple[ConnectorRef, ConnectorRef] | None = None
         self._clipboard_elements: list[TrackElement] = []
         self._clipboard_connections: list[TrackConnection] = []
@@ -85,11 +92,29 @@ class TrackCanvas(QWidget):
         self._resize_connector = None
         self._resize_started = False
         self._resize_before = None
+        self._magnet_drag_connector = None
+        self._magnet_drag_started = False
+        self._magnet_drag_before = None
         self.undo_stack.clear()
         self.fit_to_view()
         self.selection_changed.emit(None)
         self.closure_connectors_changed.emit(0)
         self.update()
+
+    def set_editor_mode(self, mode: str) -> None:
+        if mode not in {"normal", "indoor"}:
+            raise ValueError("Unknown editor mode")
+        if self.project.editor_mode == mode:
+            return
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        before_connector = self.active_connector
+        self.project.editor_mode = mode
+        self.placement = None
+        self.unsetCursor()
+        self.clear_selection()
+        self._commit_change(self._tr("Change editor mode"), before,
+                            before_selection, before_connector)
 
     def fit_to_view(self) -> None:
         margin = 72.0
@@ -118,7 +143,11 @@ class TrackCanvas(QWidget):
                      self.project.hall_width - (p.y() - self.pan.y()) / self.scale)
 
     def set_placement(self, kind: str, angle: float = 0.0) -> None:
-        if self.active_connector and self.project.is_free(self.active_connector):
+        active_element = (self.project.element_by_id(self.active_connector.element_id)
+                          if self.active_connector else None)
+        wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
+        if (self.active_connector and self.project.is_free(self.active_connector)
+                and active_element and active_element.element_type == wanted_type):
             self._append_to_active(kind, angle or 45.0)
             return
         self.placement = (kind, angle)
@@ -366,15 +395,23 @@ class TrackCanvas(QWidget):
     def _angle_difference(first: float, second: float) -> float:
         return abs((first - second + 180) % 360 - 180)
 
+    def _current_snap_distance(self) -> float:
+        return (self.indoor_snap_distance_px
+                if self.project.editor_mode == "indoor" else self.snap_distance_px)
+
     def _connector_at(self, pos: QPointF, free_only: bool = False) -> ConnectorRef | None:
-        best = None; best_distance = self.connector_hit_distance_px
+        best = None
+        best_key = (self.connector_hit_distance_px, 1)
         for element in self.project.elements:
-            for endpoint in ("start", "end"):
+            for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
                 if free_only and not self.project.is_free(connector): continue
                 screen = self.world_to_screen(element.pose_at(endpoint).point)
                 distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
-                if distance <= best_distance: best, best_distance = connector, distance
+                priority = 0 if endpoint.startswith("magnet:") else 1
+                key = (distance, priority)
+                if distance <= self.connector_hit_distance_px and key < best_key:
+                    best, best_key = connector, key
         return best
 
     def _free_connector_at_excluding(self, pos: QPointF,
@@ -386,7 +423,10 @@ class TrackCanvas(QWidget):
         for element in self.project.elements:
             if element.id == excluded.element_id:
                 continue
-            for endpoint in ("start", "end"):
+            excluded_element = self.project.element_by_id(excluded.element_id)
+            if excluded_element and element.element_type != excluded_element.element_type:
+                continue
+            for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
                 if not self.project.is_free(connector):
                     continue
@@ -401,6 +441,10 @@ class TrackCanvas(QWidget):
         if not connector or not self.project.is_free(connector): return
         before = deepcopy(self.project); before_connector = connector; before_selection = self._selection_state()
         target = self.project.connector_pose(connector)
+        source_element = self.project.element_by_id(connector.element_id)
+        wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
+        if source_element is None or source_element.element_type != wanted_type:
+            return
         kinds = ("left", "right") if kind == "curve" else (kind,)
         preferred_endpoint = "start" if connector.endpoint == "end" else "end"
         endpoints = (preferred_endpoint,
@@ -411,7 +455,7 @@ class TrackCanvas(QWidget):
                 element = TrackElement(
                     candidate_kind, target.point, width=self.default_width,
                     length=self.default_length, radius=self.default_radius,
-                    angle_deg=angle,
+                    angle_deg=angle, element_type=wanted_type,
                 )
                 new_connector = ConnectorRef(element.id, new_endpoint)
                 aligned_target = TrackProject.connection_target_pose(
@@ -450,7 +494,8 @@ class TrackCanvas(QWidget):
             pose = element.pose_at(own_endpoint); screen = self.world_to_screen(pose.point)
             for other in self.project.elements:
                 if other.id == element.id: continue
-                for candidate_endpoint in ("start", "end"):
+                if other.element_type != element.element_type: continue
+                for candidate_endpoint in other.connector_names:
                     candidate = ConnectorRef(other.id, candidate_endpoint)
                     if not self.project.is_free(candidate): continue
                     stationary = other.pose_at(candidate_endpoint)
@@ -460,7 +505,10 @@ class TrackCanvas(QWidget):
                     target_screen = self.world_to_screen(target.point)
                     distance = hypot(screen.x() - target_screen.x(), screen.y() - target_screen.y())
                     angle = self._angle_difference(pose.heading_deg, target.heading_deg)
-                    if distance <= self.snap_distance_px:
+                    if (element.element_type == "boundary"
+                            and angle > self.indoor_tangent_tolerance_deg):
+                        target = Pose(target.point, pose.heading_deg)
+                    if distance <= self._current_snap_distance():
                         score = distance + angle * 0.02
                         if best is None or score < best[0]: best = (score, own, candidate, target)
         return best
@@ -483,7 +531,9 @@ class TrackCanvas(QWidget):
                 for other in self.project.elements:
                     if other.id in selected_ids:
                         continue
-                    for candidate_endpoint in ("start", "end"):
+                    if other.element_type != element.element_type:
+                        continue
+                    for candidate_endpoint in other.connector_names:
                         candidate = ConnectorRef(other.id, candidate_endpoint)
                         if not self.project.is_free(candidate):
                             continue
@@ -496,7 +546,10 @@ class TrackCanvas(QWidget):
                                          screen.y() - target_screen.y())
                         angle = self._angle_difference(pose.heading_deg,
                                                        target.heading_deg)
-                        if distance <= self.snap_distance_px:
+                        if (element.element_type == "boundary"
+                                and angle > self.indoor_tangent_tolerance_deg):
+                            target = Pose(target.point, pose.heading_deg)
+                        if distance <= self._current_snap_distance():
                             score = distance + angle * 0.02
                             if best is None or score < best[0]:
                                 best = (score, own, candidate, target)
@@ -675,21 +728,47 @@ class TrackCanvas(QWidget):
             return False
         fixed_endpoint = "end" if connector.endpoint == "start" else "start"
         fixed_connector = ConnectorRef(element.id, fixed_endpoint)
-        if self.project.connection_for(fixed_connector) is None:
+        fixed_connection = self.project.connection_for(fixed_connector)
+        freely_resizable_boundary = (element.element_type == "boundary"
+                                     and element.kind == "straight")
+        if (fixed_connection is None
+                and not freely_resizable_boundary):
             return False
         fixed_pose = element.pose_at(fixed_endpoint)
         before = deepcopy(element)
         if element.kind == "straight":
-            direction = fixed_pose.heading_deg + (180 if fixed_endpoint == "end" else 0)
-            angle = radians(direction)
-            length = ((point.x - fixed_pose.point.x) * cos(angle)
-                      + (point.y - fixed_pose.point.y) * sin(angle))
-            if snap_values:
-                length = round(length * 2) / 2
-            if length < 0.1 or length > 200:
-                return False
-            element.length = length
-            element.align_endpoint(fixed_endpoint, fixed_pose)
+            if element.element_type == "boundary" and fixed_connection is not None:
+                # A one-sided connected boundary acts like a telescopic lever:
+                # the connected endpoint is the pivot while the mouse controls
+                # both its heading and its continuously variable length.
+                dx = point.x - fixed_pose.point.x
+                dy = point.y - fixed_pose.point.y
+                length = hypot(dx, dy)
+                if not 0.1 <= length <= 200:
+                    return False
+                direction = degrees(atan2(dy, dx))
+                element.length = length
+                element.heading_deg = (direction + (180 if fixed_endpoint == "end" else 0)) % 360
+                if fixed_endpoint == "start":
+                    element.start = fixed_pose.point
+                else:
+                    current_end = element.end_pose.point
+                    element.start = Point(
+                        element.start.x + fixed_pose.point.x - current_end.x,
+                        element.start.y + fixed_pose.point.y - current_end.y,
+                    )
+                element.rotation_reference_deg = element.heading_deg
+            else:
+                direction = fixed_pose.heading_deg + (180 if fixed_endpoint == "end" else 0)
+                angle = radians(direction)
+                length = ((point.x - fixed_pose.point.x) * cos(angle)
+                          + (point.y - fixed_pose.point.y) * sin(angle))
+                if snap_values and element.element_type != "boundary":
+                    length = round(length * 2) / 2
+                if length < 0.1 or length > 200:
+                    return False
+                element.length = length
+                element.align_endpoint(fixed_endpoint, fixed_pose)
         else:
             backwards = fixed_endpoint == "end"
             direction = fixed_pose.heading_deg + (180 if backwards else 0)
@@ -726,7 +805,7 @@ class TrackCanvas(QWidget):
         candidate = self._find_snap(element) if element else None
         if release_position is not None:
             direct_target = self._free_connector_at_excluding(
-                release_position, connector, self.snap_distance_px
+                release_position, connector, self._current_snap_distance()
             )
             if direct_target:
                 aligned_target = self.project.connector_alignment_pose(
@@ -743,7 +822,8 @@ class TrackCanvas(QWidget):
                 distance = hypot(own_pose.point.x - target.point.x,
                                  own_pose.point.y - target.point.y)
                 angle = self._angle_difference(own_pose.heading_deg, target.heading_deg)
-                if distance <= 1e-6 and angle <= 1e-6:
+                if (distance <= 1e-6
+                        and (element.element_type == "boundary" or angle <= 1e-6)):
                     self.project.connect(own, other)
                     connected = True
                 else:
@@ -902,11 +982,15 @@ class TrackCanvas(QWidget):
         painter.fillRect(self.rect(), QColor(self._colors["canvas"]))
         hall = QRectF(self.pan.x(), self.pan.y(), self.project.hall_length * self.scale,
                       self.project.hall_width * self.scale)
-        painter.fillRect(hall, QColor(self._colors["hall"]))
+        indoor = self.project.editor_mode == "indoor"
+        painter.fillRect(hall, QColor("#34383E" if indoor else self._colors["hall"]))
         painter.save()
         painter.setClipRect(hall)
         grid = 1 if self.scale >= 12 else 5
-        painter.setPen(QPen(QColor(self._colors["grid"]), 1))
+        grid_color = QColor("#FFFFFF" if indoor else self._colors["grid"])
+        if indoor:
+            grid_color.setAlpha(48)
+        painter.setPen(QPen(grid_color, 1))
         x = 0
         while x <= self.project.hall_length:
             sx = self.world_to_screen(Point(x, 0)).x()
@@ -921,14 +1005,17 @@ class TrackCanvas(QWidget):
         # collision detection. This avoids wide-pen artifacts on tight curves.
         for element in self.project.elements:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(self._colors["track"]))
+            painter.setBrush(QColor("#F4CC2E" if element.element_type == "boundary"
+                                    else self._colors["track"]))
             painter.drawPath(self._road_shape(element))
         # A very shallow tangent-aligned bridge removes antialiasing hairlines
         # without creating a round bulge on short curve segments.
-        painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(QColor(self._colors["track"]))
+        painter.setPen(Qt.PenStyle.NoPen)
         for connection in self.project.connections:
             first = self.project.element_by_id(connection.first.element_id)
             second = self.project.element_by_id(connection.second.element_id)
+            painter.setBrush(QColor("#F4CC2E" if first.element_type == "boundary"
+                                    else self._colors["track"]))
             pose = self.project.connector_pose(connection.first)
             point = self.world_to_screen(pose.point)
             half_width = min(first.width, second.width) * self.scale / 2
@@ -965,6 +1052,8 @@ class TrackCanvas(QWidget):
             if element.id in overlapping_ids:
                 painter.drawPath(self._road_shape(element))
         for element in self.project.elements:
+            if element.element_type == "boundary":
+                continue
             painter.setPen(QPen(QColor(self._colors["centerline"]), 1, Qt.PenStyle.DashLine))
             painter.drawPath(self._element_path(element))
         if self.snap_preview:
@@ -973,7 +1062,7 @@ class TrackCanvas(QWidget):
                 point = self.world_to_screen(self.project.connector_pose(connector).point)
                 painter.drawEllipse(point, 10, 10)
         for element in self.project.elements:
-            for endpoint in ("start", "end"):
+            for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
                 point = self.world_to_screen(element.pose_at(endpoint).point)
                 if connector == self.active_connector:
@@ -1044,6 +1133,10 @@ class TrackCanvas(QWidget):
         world = self.screen_to_world(event.position())
         if self.placement:
             connector = self._connector_at(event.position(), free_only=True)
+            wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
+            if (connector and self.project.element_by_id(connector.element_id).element_type
+                    != wanted_type):
+                connector = None
             if connector:
                 self.active_connector = connector
                 kind, angle = self.placement
@@ -1055,7 +1148,8 @@ class TrackCanvas(QWidget):
                 before = deepcopy(self.project); before_connector = self.active_connector; before_selection = self._selection_state()
                 element_kind = "left" if kind == "curve" else kind
                 element = TrackElement(element_kind, world, width=self.default_width, length=self.default_length,
-                                       radius=self.default_radius, angle_deg=angle or 45.0)
+                                       radius=self.default_radius, angle_deg=angle or 45.0,
+                                       element_type=("boundary" if self.project.editor_mode == "indoor" else "track"))
                 if not self.project.element_fits_hall(element):
                     self.status_message.emit(self._tr("The element would extend beyond the track area."))
                     return
@@ -1068,7 +1162,8 @@ class TrackCanvas(QWidget):
             return
         connector = self._connector_at(event.position())
         if connector:
-            if (event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            if (connector.endpoint in {"start", "end"}
+                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier
                     and self.project.is_free(connector)):
                 self.toggle_closure_connector(connector)
                 return
@@ -1076,9 +1171,20 @@ class TrackCanvas(QWidget):
             self.selected = element
             self.selected_ids = {element.id}
             self.active_connector = connector if self.project.is_free(connector) else None
+            if (connector.endpoint.startswith("magnet:")
+                    and element.element_type == "boundary"
+                    and element.kind == "straight"):
+                self._magnet_drag_connector = connector
+                self._magnet_drag_started = False
+                self._magnet_drag_before = deepcopy(self.project)
+                self._magnet_drag_before_selection = self._selection_state()
+                self._magnet_drag_before_connector = self.active_connector
             other_endpoint = "end" if connector.endpoint == "start" else "start"
-            if (self.active_connector
-                    and self.project.connection_for(ConnectorRef(element.id, other_endpoint))):
+            if (connector.endpoint in {"start", "end"}
+                    and self.active_connector
+                    and (self.project.connection_for(ConnectorRef(element.id, other_endpoint))
+                         or (element.element_type == "boundary"
+                             and element.kind == "straight"))):
                 self._resize_connector = connector
                 self._resize_started = False
                 self._resize_before = deepcopy(self.project)
@@ -1139,14 +1245,132 @@ class TrackCanvas(QWidget):
         self._commit_change(self._tr("Delete guide"), before,
                             before_selection, before_connector)
 
+    def _magnet_insertion_at(self, pos: QPointF,
+                             element: TrackElement | None) -> tuple[TrackElement, float] | None:
+        if (self.project.editor_mode != "indoor" or element is None
+                or element.element_type != "boundary" or element.kind != "straight"):
+            return None
+        start = self.world_to_screen(element.start)
+        end = self.world_to_screen(element.end_pose.point)
+        dx, dy = end.x() - start.x(), end.y() - start.y()
+        length_squared = dx * dx + dy * dy
+        if length_squared <= 1e-9:
+            return None
+        fraction = ((pos.x() - start.x()) * dx + (pos.y() - start.y()) * dy) / length_squared
+        if not 0.03 < fraction < 0.97:
+            return None
+        nearest = QPointF(start.x() + fraction * dx, start.y() + fraction * dy)
+        tolerance = max(6.0, element.width * self.scale / 2 + 4.0)
+        if hypot(pos.x() - nearest.x(), pos.y() - nearest.y()) > tolerance:
+            return None
+        return element, fraction
+
+    def add_magnet_point(self, element: TrackElement, fraction: float) -> ConnectorRef:
+        if (self.project.editor_mode != "indoor" or element.element_type != "boundary"
+                or element.kind != "straight" or not 0.0 < fraction < 1.0):
+            raise ValueError("Magnet points can only be added to straight boundaries")
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        before_connector = self.active_connector
+        point_id = str(uuid4())
+        element.magnet_points[point_id] = fraction
+        connector = ConnectorRef(element.id, f"magnet:{point_id}")
+        self.selected = element
+        self.selected_ids = {element.id}
+        self.active_connector = connector
+        self._commit_change(self._tr("Add magnet point"), before,
+                            before_selection, before_connector)
+        return connector
+
+    def remove_magnet_point(self, connector: ConnectorRef) -> bool:
+        if not connector.endpoint.startswith("magnet:"):
+            return False
+        element = self.project.element_by_id(connector.element_id)
+        point_id = connector.endpoint.split(":", 1)[1]
+        if element is None or point_id not in element.magnet_points:
+            return False
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        before_connector = self.active_connector
+        self.project.disconnect(connector)
+        del element.magnet_points[point_id]
+        self.selected = element
+        self.selected_ids = {element.id}
+        if self.active_connector == connector:
+            self.active_connector = None
+        self._commit_change(self._tr("Remove magnet point"), before,
+                            before_selection, before_connector)
+        return True
+
+    def _directly_attached_element(self, connector: ConnectorRef) -> str | None:
+        """Return only the element directly attached to a custom magnet point."""
+        connection = self.project.connection_for(connector)
+        if connection is None:
+            return None
+        peer = connection.second if connection.first == connector else connection.first
+        return peer.element_id
+
+    def _move_magnet_point_to(self, connector: ConnectorRef, position: QPointF) -> bool:
+        element = self.project.element_by_id(connector.element_id)
+        if (element is None or element.element_type != "boundary"
+                or element.kind != "straight"
+                or not connector.endpoint.startswith("magnet:")):
+            return False
+        start = self.world_to_screen(element.start)
+        end = self.world_to_screen(element.end_pose.point)
+        dx, dy = end.x() - start.x(), end.y() - start.y()
+        length_squared = dx * dx + dy * dy
+        if length_squared <= 1e-9:
+            return False
+        fraction = ((position.x() - start.x()) * dx
+                    + (position.y() - start.y()) * dy) / length_squared
+        fraction = min(0.97, max(0.03, fraction))
+        old_point = element.pose_at(connector.endpoint).point
+        point_id = connector.endpoint.split(":", 1)[1]
+        element.magnet_points[point_id] = fraction
+        new_point = element.pose_at(connector.endpoint).point
+        move_x, move_y = new_point.x - old_point.x, new_point.y - old_point.y
+        attached_id = self._directly_attached_element(connector)
+        if attached_id is not None:
+            # Only the directly attached element follows. Its other links are
+            # released so the remaining layout stays exactly where it is.
+            primary = self.project.connection_for(connector)
+            self.project.connections = [
+                item for item in self.project.connections
+                if item == primary
+                or (item.first.element_id != attached_id
+                    and item.second.element_id != attached_id)
+            ]
+            attached = self.project.element_by_id(attached_id)
+            if attached is not None:
+                attached.start = Point(attached.start.x + move_x,
+                                       attached.start.y + move_y)
+        return True
+
     def _build_context_menu(self, connector: ConnectorRef | None,
                             guide: tuple[str, int, float] | None,
-                            can_delete: bool = False) -> QMenu | None:
+                            can_delete: bool = False,
+                            magnet_candidate: tuple[TrackElement, float] | None = None) -> QMenu | None:
         connection = self.project.connection_for(connector) if connector else None
+        removable_magnet = bool(connector and connector.endpoint.startswith("magnet:"))
         can_close = len(self.closure_connectors) == 2
-        if not (connection or guide or can_close or can_delete):
+        if not (connection or guide or can_close or can_delete
+                or magnet_candidate or removable_magnet):
             return None
         menu = QMenu(self)
+        if removable_magnet and connector:
+            action = menu.addAction(self._tr("Remove magnet point"))
+            action.triggered.connect(
+                lambda checked=False, selected=connector:
+                self.remove_magnet_point(selected)
+            )
+        elif magnet_candidate:
+            element, fraction = magnet_candidate
+            action = menu.addAction(self._tr("Add magnet point"))
+            action.triggered.connect(
+                lambda checked=False, selected=element, position=fraction:
+                self.add_magnet_point(selected, position)
+            )
         if can_close:
             action = menu.addAction(self._tr("Close track…"))
             action.triggered.connect(self.close_track_requested.emit)
@@ -1174,6 +1398,8 @@ class TrackCanvas(QWidget):
         connection = self.project.connection_for(connector) if connector else None
         clicked = (self.project.element_by_id(connector.element_id)
                    if connector else self._hit_test(QPointF(event.pos())))
+        magnet_candidate = (None if connector and connector.endpoint.startswith("magnet:")
+                            else self._magnet_insertion_at(QPointF(event.pos()), clicked))
         if clicked and clicked.id not in self.selected_ids:
             self.selected = clicked
             self.selected_ids = {clicked.id}
@@ -1185,7 +1411,7 @@ class TrackCanvas(QWidget):
             self._delete_guide(guide)
             event.accept()
             return
-        menu = self._build_context_menu(connector, guide, can_delete)
+        menu = self._build_context_menu(connector, guide, can_delete, magnet_candidate)
         if menu:
             menu.exec(event.globalPos())
             event.accept()
@@ -1211,6 +1437,14 @@ class TrackCanvas(QWidget):
         elif self._selecting_rect:
             self._rubber_band.setGeometry(QRect(
                 self._rubber_origin, event.position().toPoint()).normalized())
+        elif self._magnet_drag_connector:
+            if not self._magnet_drag_started and delta.manhattanLength() > 0:
+                self._magnet_drag_started = True
+            if self._magnet_drag_started:
+                self._move_magnet_point_to(self._magnet_drag_connector,
+                                           event.position())
+                self.selection_changed.emit(self.selected)
+                self.update()
         elif self._resize_connector:
             world = self.screen_to_world(event.position())
             if not self._resize_started and delta.manhattanLength() > 0:
@@ -1220,7 +1454,7 @@ class TrackCanvas(QWidget):
                 element = self.project.element_by_id(self._resize_connector.element_id)
                 direct_target = self._free_connector_at_excluding(
                     event.position(), self._resize_connector,
-                    self.snap_distance_px,
+                    self._current_snap_distance(),
                 )
                 candidate = self._find_snap(element) if element else None
                 if direct_target:
@@ -1280,6 +1514,31 @@ class TrackCanvas(QWidget):
                 self._commit_change(text, before, selection, self.active_connector)
             else:
                 self.update()
+            return
+        if self._magnet_drag_connector:
+            if self._magnet_drag_started:
+                if all(self.project.element_fits_hall(item)
+                       for item in self.project.elements):
+                    self._commit_change(
+                        self._tr("Move magnet point"), self._magnet_drag_before,
+                        self._magnet_drag_before_selection,
+                        self._magnet_drag_before_connector,
+                    )
+                else:
+                    self._restore_without_signal(
+                        self._magnet_drag_before,
+                        self._magnet_drag_before_selection,
+                        self._magnet_drag_before_connector,
+                    )
+                    self.status_message.emit(self._tr(
+                        "The element would extend beyond the track area."
+                    ))
+            self._magnet_drag_connector = None
+            self._magnet_drag_started = False
+            self._magnet_drag_before = None
+            self._magnet_drag_before_selection = None
+            self._magnet_drag_before_connector = None
+            self.update()
             return
         if self._resize_connector:
             if self._resize_started:
@@ -1391,6 +1650,13 @@ class TrackCanvas(QWidget):
             self._restore_without_signal(self._resize_before, self._resize_before_selection,
                                          self._resize_before_connector)
             self.selection_changed.emit(self.selected); self.update()
+        if self._magnet_drag_started and self._magnet_drag_before is not None:
+            self._restore_without_signal(
+                self._magnet_drag_before,
+                self._magnet_drag_before_selection,
+                self._magnet_drag_before_connector,
+            )
+            self.selection_changed.emit(self.selected); self.update()
         self._space_pressed = False
         self._panning = False
         self._selecting_rect = False
@@ -1407,6 +1673,11 @@ class TrackCanvas(QWidget):
         self._resize_before = None
         self._resize_before_selection = None
         self._resize_before_connector = None
+        self._magnet_drag_connector = None
+        self._magnet_drag_started = False
+        self._magnet_drag_before = None
+        self._magnet_drag_before_selection = None
+        self._magnet_drag_before_connector = None
         self.snap_preview = None
         self._drag_ignored_pairs.clear()
         self.unsetCursor()
