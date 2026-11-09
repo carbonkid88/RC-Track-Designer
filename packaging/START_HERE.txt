@@ -1,4 +1,4 @@
-RC Track Designer v0.3.0 beta 1 - Windows 64 Bit
+RC Track Designer v0.4.0 beta 1 - Windows 64 Bit
 =================================================
 
 SYSTEMVORAUSSETZUNGEN
@@ -24,6 +24,15 @@ DATEN UND EINSTELLUNGEN
 SPRACHE UND THEME
 Unter Ansicht > Einstellungen kann zwischen Deutsch/Englisch und Hell/Dunkel
 gewechselt werden.
+
+BEARBEITUNGSMODI
+- Der normale Modus plant gefüllte Fahrbahnelemente.
+- Der Hallenmodus plant frei platzierbare gelbe Streckenbegrenzungen auf einer
+  anthrazitfarbenen Teppichfläche.
+- Vor einem Moduswechsel müssen ungespeicherte Änderungen gespeichert werden.
+  Der Zielmodus beginnt anschließend mit einem leeren Streckenbereich.
+
+Weitere Hinweise stehen in README.md und RELEASE_NOTES_v0.4.0-beta1.md.
 
 LIZENZ
 Die vollständigen Lizenzbedingungen stehen in LICENSE.txt und im Programm unter

@@ -12,8 +12,8 @@ def test_project_roundtrip(tmp_path):
     save_project(project, target)
     assert load_project(target) == project
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert data["app_version"] == "0.3.0"
-    assert data["format_version"] == 3
+    assert data["app_version"] == "0.4.0"
+    assert data["format_version"] == 4
     assert data["guides"] == {"x": [3.5, 12.0], "y": [4.5]}
 
 def test_v1_project_without_connections_remains_loadable(tmp_path):
@@ -47,6 +47,31 @@ def test_same_end_connection_roundtrip(tmp_path):
     assert loaded == project
     assert loaded.connections[0].first.endpoint == "start"
     assert loaded.connections[0].second.endpoint == "start"
+
+
+def test_stale_connection_does_not_prevent_loading_or_remove_elements(tmp_path):
+    first = TrackElement("straight", Point(2, 3), length=4)
+    second = TrackElement("straight", Point(6, 3), length=2)
+    connection = {
+        "first": {"element_id": first.id, "endpoint": "end"},
+        "second": {"element_id": second.id, "endpoint": "start"},
+    }
+    moved_second = second.to_dict()
+    moved_second["start"]["x"] = 8.0
+    target = tmp_path / "stale-connection.rct.json"
+    target.write_text(json.dumps({
+        "format": "rc-track-designer",
+        "format_version": 4,
+        "editor_mode": "normal",
+        "hall": {"length": 30, "width": 20},
+        "elements": [first.to_dict(), moved_second],
+        "connections": [connection],
+    }), encoding="utf-8")
+
+    loaded = load_project(target)
+    assert len(loaded.elements) == 2
+    assert loaded.element_by_id(second.id).start == Point(8, 3)
+    assert loaded.connections == []
 
 def test_unknown_format_is_rejected(tmp_path):
     target = tmp_path / "future.json"

@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         self._create_toolbars()
         self._create_properties_dock()
         self.apply_appearance()
-        self.canvas.project_changed.connect(self._mark_dirty)
+        self.canvas.project_changed.connect(self._project_changed)
         self.canvas.selection_changed.connect(self._selection_changed)
         self.canvas.status_message.connect(self.statusBar().showMessage)
         self.canvas.closure_connectors_changed.connect(
@@ -160,6 +160,13 @@ class MainWindow(QMainWindow):
         main.addAction(self.fit_action)
         self.fit_action.setToolTip(tr("Reset zoom and pan so the complete track area is centred in the workspace."))
         main.addSeparator()
+        self.mode_label = QLabel(f" {tr('Editing mode:')} ")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem(tr("Normal mode"), "normal")
+        self.mode_combo.addItem(tr("Indoor mode"), "indoor")
+        self.mode_combo.setMinimumWidth(135)
+        self.mode_combo.setCurrentIndex(self.mode_combo.findData(self.canvas.project.editor_mode))
+        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         self.hall_length_spin = self._spin(self.canvas.project.hall_length, 1, 1000, " m")
         self.hall_width_spin = self._spin(self.canvas.project.hall_width, 1, 1000, " m")
         self.hall_length_spin.setMinimumWidth(78); self.hall_length_spin.setMaximumWidth(82)
@@ -219,26 +226,36 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak(); self.addToolBar(palette)
         self.elements_label = QLabel(f" {tr('Elements:')} ")
         self.straight_action = QAction(tr("Straight"), self); self.straight_action.triggered.connect(lambda: self.canvas.set_placement("straight"))
-        palette.addAction(self.straight_action)
         palette_widget = QWidget()
         palette_widget.setObjectName("elementPalette")
         palette_layout = QVBoxLayout(palette_widget)
-        palette_layout.setContentsMargins(2, 1, 2, 1); palette_layout.setSpacing(3)
-        curve_row = QHBoxLayout(); curve_row.setContentsMargins(0, 0, 0, 0); curve_row.setSpacing(4)
+        palette_layout.setContentsMargins(4, 1, 2, 2); palette_layout.setSpacing(1)
+        self.palette_mode_label = QLabel(tr("Normal mode"))
+        self.palette_mode_label.setObjectName("paletteModeLabel")
+        self.palette_mode_label.setFixedHeight(18)
+        palette_layout.addWidget(self.palette_mode_label)
+        element_row = QHBoxLayout()
+        element_row.setContentsMargins(0, 0, 0, 0); element_row.setSpacing(3)
+        self.straight_button = QToolButton()
+        self.straight_button.setDefaultAction(self.straight_action)
+        self.straight_button.setFixedWidth(78)
+        element_row.addWidget(self.straight_button)
         self.curve_label = QLabel(f" {tr('Curves:')} ")
-        self.curve_label.setFixedWidth(105)
-        curve_row.addWidget(self.curve_label)
+        self.curve_label.setFixedWidth(64)
+        element_row.addWidget(self.curve_label)
         self.curve_actions = []
+        self.curve_buttons = []
         for angle in range(5, 91, 5):
             action = QAction(f"{angle}°", self)
             action.triggered.connect(
                 lambda checked=False, a=angle: self.canvas.set_placement("curve", a)
             )
             self.curve_actions.append(action)
-            button = QToolButton(); button.setFixedWidth(38); button.setDefaultAction(action)
-            curve_row.addWidget(button)
-        curve_row.addStretch()
-        palette_layout.addLayout(curve_row)
+            button = QToolButton(); button.setFixedWidth(34); button.setDefaultAction(action)
+            self.curve_buttons.append(button)
+            element_row.addWidget(button)
+        element_row.addStretch()
+        palette_layout.addLayout(element_row)
         palette.addWidget(palette_widget)
         palette.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.logo_panel = QFrame(self)
@@ -253,6 +270,9 @@ class MainWindow(QMainWindow):
         self.logo_source = QPixmap(str(Path(__file__).with_name("assets") / "carbonkid_logo.png"))
         logo_layout.addWidget(self.logo_label)
         options = QToolBar(tr("Element dimensions"), self); options.setMovable(False); self.addToolBarBreak(); self.addToolBar(options)
+        options.addWidget(self.mode_label)
+        options.addWidget(self.mode_combo)
+        options.addSeparator()
         self.width_spin = self._spin(2, 0.1, 20, " m")
         self.length_spin = self._spin(5, 0.1, 200, " m")
         self.length_spin.setSingleStep(0.5)
@@ -264,6 +284,7 @@ class MainWindow(QMainWindow):
         self.width_spin.valueChanged.connect(self._width_changed)
         self.length_spin.valueChanged.connect(self._length_changed)
         self.radius_spin.valueChanged.connect(self._radius_changed)
+        self._apply_mode_ui()
         QTimer.singleShot(0, self._position_logo_panel)
 
     def _position_logo_panel(self) -> None:
@@ -313,22 +334,28 @@ class MainWindow(QMainWindow):
         )
         self.property_labels = {}
         for name, label_text, value, minimum, maximum, suffix in definitions:
-            label = QLabel(label_text); spin = self._spin(value, minimum, maximum, suffix)
+            label = QLabel(label_text); label.setFixedWidth(125)
+            spin = self._spin(value, minimum, maximum, suffix)
             if name in {"length", "radius"}:
                 spin.setSingleStep(0.5)
             spin.valueChanged.connect(lambda new_value, key=name: self._property_changed(key, new_value))
             self.property_labels[name] = label; self.property_spins[name] = spin
             form.addRow(label, spin)
         self.properties_dock.setWidget(panel); self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.properties_dock)
-        self.properties_dock.setMinimumWidth(260); panel.setEnabled(False)
+        self.properties_dock.setMinimumWidth(285)
+        self.properties_dock.setMaximumWidth(285)
+        panel.setEnabled(False)
         self.properties_toggle_action = self.properties_dock.toggleViewAction()
         self.properties_toggle_action.setText(tr("Properties"))
         self.view_menu.insertAction(self.settings_action, self.properties_toggle_action)
         self.view_menu.insertSeparator(self.settings_action)
 
     def _property_changed(self, name: str, value: float) -> None:
-        values = {name: value}
         element = self.canvas.selected
+        if name == "width" and element and element.element_type == "boundary":
+            allowed = (5.0, 10.0, 15.0, 20.0, 25.0)
+            value = min(allowed, key=lambda item: abs(item - value)) / 100.0
+        values = {name: value}
         if name == "width" and element and element.kind != "straight":
             values["radius"] = max(element.radius, value / 2)
         self.canvas.change_selected(self.tr_text("Change properties"), **values)
@@ -343,11 +370,26 @@ class MainWindow(QMainWindow):
             angle_spin.blockSignals(False)
             self.property_spins["radius"].setMinimum(0.1)
             return
+        width_spin = self.property_spins["width"]
+        width_spin.blockSignals(True)
+        if element.element_type == "boundary":
+            width_spin.setRange(5, 25); width_spin.setSingleStep(5)
+            width_spin.setDecimals(0); width_spin.setSuffix(" cm")
+        else:
+            width_spin.setRange(0.1, 20); width_spin.setSingleStep(0.1)
+            width_spin.setDecimals(2); width_spin.setSuffix(" m")
+        width_spin.blockSignals(False)
+        self.property_labels["width"].setText(self.tr_text(
+            "Boundary width:" if element.element_type == "boundary" else "Track width:"
+        ))
         self.element_type_value.setText(
-            self.tr_text("Straight" if element.kind == "straight" else "Curve")
+            self.tr_text(("Boundary straight" if element.kind == "straight" else "Boundary curve")
+                         if element.element_type == "boundary"
+                         else ("Straight" if element.kind == "straight" else "Curve"))
         )
         values = {"x": element.start.x, "y": element.start.y, "heading_deg": element.heading_deg,
-                  "width": element.width, "length": element.length, "radius": element.radius,
+                  "width": element.width * 100 if element.element_type == "boundary" else element.width,
+                  "length": element.length, "radius": element.radius,
                   "angle_deg": element.angle_deg if element.kind != "straight" else 0.0}
         self.property_spins["radius"].setMinimum(
             element.minimum_centerline_radius if element.kind != "straight" else 0.1
@@ -365,14 +407,24 @@ class MainWindow(QMainWindow):
         self.copy_action.setEnabled(element is not None)
         self.rotate_left_action.setEnabled(self.canvas.can_rotate_selected(5))
         self.rotate_right_action.setEnabled(self.canvas.can_rotate_selected(-5))
-        if element:
-            for spin, value in ((self.width_spin, element.width), (self.length_spin, element.length), (self.radius_spin, element.radius)):
+        expected_type = "boundary" if self.canvas.project.editor_mode == "indoor" else "track"
+        if element and element.element_type == expected_type:
+            width_value = element.width * 100 if element.element_type == "boundary" else element.width
+            for spin, value in ((self.width_spin, width_value), (self.length_spin, element.length), (self.radius_spin, element.radius)):
                 spin.blockSignals(True); spin.setValue(value); spin.blockSignals(False)
         self._sync_properties(element)
 
     def _width_changed(self, value: float) -> None:
-        self.canvas.default_width = value
-        minimum_radius = value / 2
+        if self.canvas.project.editor_mode == "indoor":
+            allowed = (5.0, 10.0, 15.0, 20.0, 25.0)
+            snapped = min(allowed, key=lambda item: abs(item - value))
+            if abs(snapped - value) > 1e-9:
+                self.width_spin.blockSignals(True); self.width_spin.setValue(snapped); self.width_spin.blockSignals(False)
+            value_metres = snapped / 100.0
+        else:
+            value_metres = value
+        self.canvas.default_width = value_metres
+        minimum_radius = value_metres / 2
         self.radius_spin.setMinimum(minimum_radius)
         radius = max(self.radius_spin.value(), minimum_radius)
         if radius != self.radius_spin.value():
@@ -381,7 +433,7 @@ class MainWindow(QMainWindow):
             self.radius_spin.blockSignals(False)
         self.canvas.default_radius = radius
         if self.canvas.selected:
-            values = {"width": value}
+            values = {"width": value_metres}
             if self.canvas.selected.kind != "straight":
                 values["radius"] = max(self.canvas.selected.radius, minimum_radius)
             self.canvas.change_selected(self.tr_text("Change track width"), **values)
@@ -423,8 +475,78 @@ class MainWindow(QMainWindow):
                             (self.hall_width_spin, self.canvas.project.hall_width)):
             spin.blockSignals(True); spin.setValue(value); spin.blockSignals(False)
 
+    def _mode_changed(self) -> None:
+        mode = str(self.mode_combo.currentData())
+        if mode == self.canvas.project.editor_mode:
+            return
+        if self.dirty:
+            box = QMessageBox(
+                QMessageBox.Icon.Question,
+                self.tr_text("Unsaved changes"),
+                self.tr_text("Save changes before continuing?"),
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
+                self,
+            )
+            box.button(QMessageBox.StandardButton.Save).setText(self.tr_text("Save"))
+            box.button(QMessageBox.StandardButton.Cancel).setText(self.tr_text("Cancel"))
+            if (QMessageBox.StandardButton(box.exec()) != QMessageBox.StandardButton.Save
+                    or not self.save()):
+                self._apply_mode_ui()
+                return
+        length = self.canvas.project.hall_length
+        width = self.canvas.project.hall_width
+        self.canvas.set_project(TrackProject(length, width, editor_mode=mode))
+        self.current_path = None
+        self.dirty = False
+        self._sync_hall_controls()
+        self._apply_mode_ui()
+        self._update_title()
+
+    def _apply_mode_ui(self) -> None:
+        indoor = self.canvas.project.editor_mode == "indoor"
+        if hasattr(self, "mode_combo"):
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(self.canvas.project.editor_mode)))
+            self.mode_combo.blockSignals(False)
+        self.palette_mode_label.setText(self.tr_text("Indoor mode" if indoor else "Normal mode"))
+        self.straight_action.setText(self.tr_text("Straight"))
+        self.curve_label.setText(f" {self.tr_text('Curves:')} ")
+        self.width_label.setText(f" {self.tr_text('Boundary width:' if indoor else 'Track width:')} ")
+        self.width_spin.blockSignals(True)
+        if indoor:
+            self.width_spin.setRange(5, 25); self.width_spin.setSingleStep(5)
+            self.width_spin.setDecimals(0); self.width_spin.setSuffix(" cm"); self.width_spin.setValue(10)
+            self.canvas.default_width = 0.10
+        else:
+            self.width_spin.setRange(0.1, 20); self.width_spin.setSingleStep(0.1)
+            self.width_spin.setDecimals(2); self.width_spin.setSuffix(" m"); self.width_spin.setValue(2)
+            self.canvas.default_width = 2.0
+        self.width_spin.blockSignals(False)
+        if hasattr(self, "property_labels") and self.canvas.selected is None:
+            self.property_labels["width"].setText(self.tr_text(
+                "Boundary width:" if indoor else "Track width:"
+            ))
+            property_width = self.property_spins["width"]
+            property_width.blockSignals(True)
+            if indoor:
+                property_width.setRange(5, 25); property_width.setSingleStep(5)
+                property_width.setDecimals(0); property_width.setSuffix(" cm")
+                property_width.setValue(10)
+            else:
+                property_width.setRange(0.1, 20); property_width.setSingleStep(0.1)
+                property_width.setDecimals(2); property_width.setSuffix(" m")
+                property_width.setValue(2)
+            property_width.blockSignals(False)
+        self.canvas.update()
+
     def _mark_dirty(self) -> None:
         self.dirty = True; self._update_title()
+
+    def _project_changed(self) -> None:
+        self._mark_dirty()
+        if (hasattr(self, "mode_combo")
+                and self.mode_combo.currentData() != self.canvas.project.editor_mode):
+            self._apply_mode_ui()
 
     def _update_title(self) -> None:
         name = self.current_path.name if self.current_path else self.tr_text("Untitled")
@@ -508,12 +630,14 @@ class MainWindow(QMainWindow):
         browser.setOpenExternalLinks(True)
         sections = (
             ("Create a track area", "Create a new project and enter the length and width of the available track area. The internal unit is metres."),
+            ("Choose an editing mode", "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."),
+            ("Add magnet points", "In indoor mode, right-click a straight barrier to add a magnet point. Drag the point along the straight; only the directly attached barrier moves with it and its next connection is released. Right-click an added magnet point to remove it."),
             ("Place and connect elements", "Choose a straight or neutral curve angle from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Curves rotate through 360 degrees and can snap using either endpoint. Green connectors are connected; the orange connector is active."),
             ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. A selected segment rotates 5 degrees with the Left and Right arrow keys; hold a key down for continuous rotation. Right-click a selected segment to delete the selection. Esc cancels placement or clears the selection."),
             ("Close gaps and move groups", "Drag the free connector of a one-sided connected element to change its length, radius or curve angle. Release it near a compatible connector to close the gap. A selected connected group moves as one rigid unit and can snap to an external free connector."),
             ("Close an open track", "Select the two free connectors of one open track with Ctrl+click. Choose Edit > Close track or use the right-click menu. The preview lists local length, radius and angle adjustments; nothing changes until you confirm."),
             ("Navigate and organise", "Zoom with the mouse wheel. Pan with the middle mouse button or Space plus the left mouse button. Drag guides from the rulers; remove a guide with the right mouse button."),
-            ("Correct mistakes and save", "Use Ctrl+Z and Ctrl+Y for undo and redo. Ctrl+C and Ctrl+V copy and paste selected elements. Save projects as JSON files from the File menu."),
+            ("Correct mistakes and save", "Use Ctrl+Z and Ctrl+Y for undo and redo. Ctrl+C and Ctrl+V copy and paste selected elements. Save projects as JSON files from the File menu. Older projects remain loadable; stale connection references are released without removing track elements."),
         )
         html = [f"<h1>{tr('Using RC Track Designer')}</h1>"]
         for heading, body in sections:
@@ -574,6 +698,13 @@ class MainWindow(QMainWindow):
             (self.straight_action, "Straight"), (self.undo_action, "Undo"), (self.redo_action, "Redo"),
         )
         for action, source in actions: action.setText(tr(source))
+        self.mode_label.setText(f" {tr('Editing mode:')} ")
+        current_mode = self.canvas.project.editor_mode
+        self.mode_combo.blockSignals(True)
+        self.mode_combo.setItemText(self.mode_combo.findData("normal"), tr("Normal mode"))
+        self.mode_combo.setItemText(self.mode_combo.findData("indoor"), tr("Indoor mode"))
+        self.mode_combo.setCurrentIndex(self.mode_combo.findData(current_mode))
+        self.mode_combo.blockSignals(False)
         self.rotate_left_button.setText(tr("5° left"))
         self.rotate_left_button.setToolTip(tr("Rotate 5° left"))
         self.rotate_right_button.setText(tr("5° right"))
@@ -583,8 +714,6 @@ class MainWindow(QMainWindow):
                              (self.view_menu, "View"), (self.help_menu, "Help")):
             menu.setTitle(tr(source))
         self.elements_label.setText(f" {tr('Elements:')} ")
-        self.curve_label.setText(f" {tr('Curves:')} ")
-        self.width_label.setText(f" {tr('Track width:')} ")
         self.length_label.setText(f" {tr('Straight length:')} ")
         self.radius_label.setText(f" {tr('Centerline radius:')} ")
         self.hall_length_label.setText(f" {tr('L:')} ")
@@ -602,6 +731,9 @@ class MainWindow(QMainWindow):
                             "width": "Track width:", "length": "Length:", "radius": "Radius:",
                             "angle_deg": "Curve angle:"}
         for name, source in property_sources.items(): self.property_labels[name].setText(tr(source))
+        self._apply_mode_ui()
+        if self.canvas.selected and self.canvas.selected.element_type == "boundary":
+            self.property_labels["width"].setText(tr("Boundary width:"))
         self._sync_properties(self.canvas.selected)
         self.canvas.set_appearance({}, tr)
         self._update_title()
@@ -626,6 +758,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.canvas.set_project(TrackProject(dialog.length.value(), dialog.width.value()))
             self._sync_hall_controls()
+            self._apply_mode_ui()
             self.current_path = None; self.dirty = False; self._update_title()
 
     def open_project(self) -> None:
@@ -634,7 +767,7 @@ class MainWindow(QMainWindow):
         if not filename: return
         try: project = load_project(filename)
         except Exception as error: QMessageBox.critical(self, self.tr_text("Open failed"), str(error)); return
-        self.canvas.set_project(project); self._sync_hall_controls(); self.current_path = Path(filename); self.dirty = False; self._update_title()
+        self.canvas.set_project(project); self._sync_hall_controls(); self._apply_mode_ui(); self.current_path = Path(filename); self.dirty = False; self._update_title()
 
     def save(self) -> bool:
         return self._save_to(self.current_path) if self.current_path else self.save_as()
