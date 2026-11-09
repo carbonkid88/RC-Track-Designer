@@ -14,9 +14,9 @@ $BuildRoot = Join-Path $ProjectRoot "build\pyinstaller"
 $PytestTemp = Join-Path $ProjectRoot "build\pytest-temp"
 $DistRoot = Join-Path $ProjectRoot "dist"
 $ArtifactRoot = Join-Path $ProjectRoot "artifacts"
-$DistributionName = "RC-Track-Designer_v0.3.0-beta1"
+$DistributionName = "RC-Track-Designer_v0.4.0-beta1"
 $PortableDirectory = Join-Path $DistRoot $DistributionName
-$ZipPath = Join-Path $ArtifactRoot "RC-Track-Designer_v0.3.0-beta1_win64.zip"
+$ZipPath = Join-Path $ArtifactRoot "RC-Track-Designer_v0.4.0-beta1_win64.zip"
 
 if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
     throw "Python wurde nicht gefunden: $PythonPath"
@@ -28,8 +28,8 @@ if ($PythonBits -ne "64") {
 }
 
 $ApplicationVersion = (& $PythonPath -c "import sys; sys.path.insert(0, 'src'); from rc_track_designer import __version__; print(__version__)" ).Trim()
-if ($ApplicationVersion -ne "0.3.0") {
-    throw "Die Buildkonfiguration erwartet Anwendungsversion 0.3.0, gefunden wurde $ApplicationVersion."
+if ($ApplicationVersion -ne "0.4.0") {
+    throw "Die Buildkonfiguration erwartet Anwendungsversion 0.4.0, gefunden wurde $ApplicationVersion."
 }
 
 & $PythonPath -m PyInstaller --version | Out-Null
@@ -65,12 +65,18 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "LICENSE.txt") -Destination $PortableDirectory
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging\START_HERE.txt") -Destination $PortableDirectory
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "README.md") -Destination $PortableDirectory
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "packaging\RELEASE_NOTES_v0.4.0-beta1.md") -Destination $PortableDirectory
 
 $RequiredFiles = @(
     "RC-Track-Designer.exe",
     "LICENSE.txt",
     "START_HERE.txt",
+    "README.md",
+    "RELEASE_NOTES_v0.4.0-beta1.md",
     "_internal\LICENSE.txt",
+    "_internal\README.md",
+    "_internal\RELEASE_NOTES_v0.4.0-beta1.md",
     "_internal\rc_track_designer\locales\de.json",
     "_internal\rc_track_designer\locales\en.json",
     "_internal\rc_track_designer\assets\carbonkid_logo.png",

@@ -11,6 +11,7 @@
 - Freistehende Begrenzungen, mehrere unabhängige Ketten, magnetisches Andocken und Smart Building an freien Anschlüssen
 - Projektformat Version 4 mit Bearbeitungsmodus und expliziter Elementkategorie
 - Zusätzliche, entlang gerader Begrenzungen verschiebbare Magnetpunkte mit Kontextmenü, gezielter Mitführung nur des direkt angedockten Elements, Undo/Redo und Projektspeicherung
+- Reproduzierbare portable Windows-64-Bit-Beta-1-Konfiguration mit zweisprachigen Release Notes und vollständiger Ressourcenprüfung
 
 ### Geändert
 
