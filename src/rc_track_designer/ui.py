@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QTabWidget, QTextBrowser, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
-from . import __version__
+from . import __release_name__
 from .canvas import TrackCanvas
 from .i18n import TranslationManager
 from .model import TrackElement, TrackProject
@@ -65,6 +65,7 @@ class SettingsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "software_icon_candidate.png")))
         self.settings = QSettings()
         self.translations = TranslationManager(str(self.settings.value("language", "de")))
         self.theme = str(self.settings.value("theme", "dark"))
@@ -137,7 +138,7 @@ class MainWindow(QMainWindow):
         edit.addActions([self.copy_action, self.paste_action]); edit.addSeparator()
         edit.addAction(self.close_track_action); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
-        self.view_menu = self.menuBar().addMenu(tr("View")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
+        self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
         self.help_menu = self.menuBar().addMenu(tr("Help"))
         self.help_menu.addAction(self.guide_action)
         self.help_menu.addAction(self.license_action)
@@ -549,8 +550,12 @@ class MainWindow(QMainWindow):
             self._apply_mode_ui()
 
     def _update_title(self) -> None:
-        name = self.current_path.name if self.current_path else self.tr_text("Untitled")
-        self.setWindowTitle(f"{'*' if self.dirty else ''}{name} — RC Track Designer {__version__}")
+        self.setWindowTitle("RC Track Designer")
+        project_name = ""
+        if self.current_path:
+            filename = self.current_path.name
+            project_name = filename[:-9] if filename.lower().endswith(".rct.json") else self.current_path.stem
+        self.canvas.set_project_name(project_name)
 
     def apply_appearance(self) -> None:
         app = QApplication.instance()
@@ -631,7 +636,7 @@ class MainWindow(QMainWindow):
         sections = (
             ("Create a track area", "Create a new project and enter the length and width of the available track area. The internal unit is metres."),
             ("Choose an editing mode", "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."),
-            ("Add magnet points", "In indoor mode, right-click a straight barrier to add a magnet point. Drag the point along the straight; only the directly attached barrier moves with it and its next connection is released. Right-click an added magnet point to remove it."),
+            ("Add magnet points", "In indoor mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it."),
             ("Place and connect elements", "Choose a straight or neutral curve angle from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Curves rotate through 360 degrees and can snap using either endpoint. Green connectors are connected; the orange connector is active."),
             ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. A selected segment rotates 5 degrees with the Left and Right arrow keys; hold a key down for continuous rotation. Right-click a selected segment to delete the selection. Esc cancels placement or clears the selection."),
             ("Close gaps and move groups", "Drag the free connector of a one-sided connected element to change its length, radius or curve angle. Release it near a compatible connector to close the gap. A selected connected group moves as one rigid unit and can snap to an external free connector."),
@@ -711,7 +716,7 @@ class MainWindow(QMainWindow):
         self.rotate_right_button.setToolTip(tr("Rotate 5° right"))
         self.delete_button.setText(tr("Delete selection"))
         for menu, source in ((self.file_menu, "File"), (self.edit_menu, "Edit"),
-                             (self.view_menu, "View"), (self.help_menu, "Help")):
+                             (self.view_menu, "Settings"), (self.help_menu, "Help")):
             menu.setTitle(tr(source))
         self.elements_label.setText(f" {tr('Elements:')} ")
         self.length_label.setText(f" {tr('Straight length:')} ")
@@ -788,4 +793,8 @@ class MainWindow(QMainWindow):
 
     def about(self) -> None:
         description = self.tr_text("2D layout editor for RC race tracks.\nInternal unit: metres.")
-        QMessageBox.about(self, self.tr_text("About RC Track Designer"), f"RC Track Designer {__version__}\n\n{description}")
+        QMessageBox.about(
+            self,
+            self.tr_text("About RC Track Designer"),
+            f"RC Track Designer {__release_name__}\n\n{description}",
+        )

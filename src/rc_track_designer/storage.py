@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .model import ConnectorRef, TrackConnection, TrackElement, TrackProject
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 
 
 def _load_valid_connections(elements: list[TrackElement], raw_connections: list[dict]) -> list[TrackConnection]:
@@ -29,7 +29,8 @@ def _load_valid_connections(elements: list[TrackElement], raw_connections: list[
             if (first_element is None or second_element is None
                     or first.element_id == second.element_id
                     or first_element.element_type != second_element.element_type
-                    or first in occupied or second in occupied):
+                    or (first in occupied and not project.is_multi_connection_connector(first))
+                    or (second in occupied and not project.is_multi_connection_connector(second))):
                 continue
             distance, angle = project.connector_alignment_error(first, second)
             if distance > 1e-6:
@@ -46,7 +47,7 @@ def _load_valid_connections(elements: list[TrackElement], raw_connections: list[
 def save_project(project: TrackProject, path: str | Path) -> None:
     data = {
         "format": "rc-track-designer", "format_version": FORMAT_VERSION,
-        "app_version": "0.4.0",
+        "app_version": "0.4.0-beta.2",
         "editor_mode": project.editor_mode,
         "hall": {"length": project.hall_length, "width": project.hall_width},
         "elements": [element.to_dict() for element in project.elements],
@@ -59,7 +60,7 @@ def save_project(project: TrackProject, path: str | Path) -> None:
 def load_project(path: str | Path) -> TrackProject:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     version = data.get("format_version")
-    if data.get("format") != "rc-track-designer" or version not in {1, 2, 3, FORMAT_VERSION}:
+    if data.get("format") != "rc-track-designer" or version not in {1, 2, 3, 4, FORMAT_VERSION}:
         raise ValueError("Nicht unterstütztes Projektformat")
     hall = data["hall"]
     guides = data.get("guides", {})

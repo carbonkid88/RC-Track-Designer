@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.4.0] - Unreleased
+## [0.4.0-beta.2] - 2026-11-10
+
+### Geändert
+
+- Einheitlicher Fenstertitel „RC Track Designer“ mit eigenem RC-Track-Designer-Logo im Fenstersymbol
+- Der Name eines geladenen oder gespeicherten Projekts steht nun direkt neben Streckenbereich und Rasterangabe auf der Zeichenfläche
+- Das bisherige Menü „Ansicht“ heißt jetzt treffender „Einstellungen“
+- Im Hallenmodus bleiben Verbindungen an zusätzlichen Magnetpunkten beim Verschieben ihrer Trägergeraden als Gelenkkette erhalten; eine verbindende Gerade richtet sich zwischen den Gelenken neu aus, ohne den übrigen Verlauf mitzubewegen
+- Sämtliche Anschlüsse im Hallenmodus unterstützen mehrere gleichzeitig verbundene Geraden und Kurven als frei kombinierbare Abzweige
+- Verbundene Begrenzungsendpunkte lassen sich als Gelenke direkt ziehen; angrenzende Geraden und Kurven passen ihre Geometrie zwischen den feststehenden Gegenpunkten an
+- Projektformat Version 5 speichert Mehrfachverbindungen; ältere Formate 1 bis 4 bleiben ladbar
+
+## [0.4.0] - 2026-11-09
 
 ### Hinzugefügt
 

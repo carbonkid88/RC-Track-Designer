@@ -25,6 +25,7 @@ class TrackCanvas(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.project = TrackProject()
+        self.project_name = ""
         self.scale = 25.0
         self.pan = QPointF(35.0, 35.0)
         self.selected: TrackElement | None = None
@@ -47,7 +48,14 @@ class TrackCanvas(QWidget):
         self._magnet_drag_before = None
         self._magnet_drag_before_selection = None
         self._magnet_drag_before_connector = None
+        self._junction_drag_connector: ConnectorRef | None = None
+        self._junction_drag_started = False
+        self._junction_drag_before = None
+        self._junction_drag_before_selection = None
+        self._junction_drag_before_connector = None
         self._drag_ignored_pairs: set[frozenset[str]] = set()
+        self._drag_joint_followers: set[str] = set()
+        self._drag_joint_bridges: dict[str, tuple[ConnectorRef, ConnectorRef, Point]] = {}
         self._panning = False
         self._selecting_rect = False
         self._rubber_origin = QPoint()
@@ -82,6 +90,11 @@ class TrackCanvas(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(640, 400)
 
+    def set_project_name(self, name: str) -> None:
+        """Show the loaded project name beside the fixed area information."""
+        self.project_name = name.strip()
+        self.update()
+
     def set_project(self, project: TrackProject) -> None:
         self.project = project
         self.selected = None
@@ -95,6 +108,9 @@ class TrackCanvas(QWidget):
         self._magnet_drag_connector = None
         self._magnet_drag_started = False
         self._magnet_drag_before = None
+        self._junction_drag_connector = None
+        self._junction_drag_started = False
+        self._junction_drag_before = None
         self.undo_stack.clear()
         self.fit_to_view()
         self.selection_changed.emit(None)
@@ -146,7 +162,7 @@ class TrackCanvas(QWidget):
         active_element = (self.project.element_by_id(self.active_connector.element_id)
                           if self.active_connector else None)
         wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
-        if (self.active_connector and self.project.is_free(self.active_connector)
+        if (self.active_connector and self.project.can_accept_connection(self.active_connector)
                 and active_element and active_element.element_type == wanted_type):
             self._append_to_active(kind, angle or 45.0)
             return
@@ -351,7 +367,7 @@ class TrackCanvas(QWidget):
         connection = self.project.connection_for(connector)
         if connection is None: return False
         before = deepcopy(self.project); before_selection = self._selection_state(); before_connector = self.active_connector
-        self.project.disconnect(connector)
+        self.project.disconnect_all(connector)
         self.selected = self.project.element_by_id(connector.element_id)
         self.selected_ids = {connector.element_id}
         self.active_connector = connector
@@ -381,7 +397,8 @@ class TrackCanvas(QWidget):
             selected_id = selection
             self.selected_ids = {selected_id} if selected_id and project.element_by_id(selected_id) else set()
         self.selected = project.element_by_id(selected_id) if selected_id else None
-        self.active_connector = connector if connector and project.is_free(connector) else None
+        self.active_connector = (connector if connector
+                                 and project.can_accept_connection(connector) else None)
 
     def _commit_change(self, text: str, before: TrackProject, before_selection,
                        before_connector: ConnectorRef | None) -> None:
@@ -405,7 +422,7 @@ class TrackCanvas(QWidget):
         for element in self.project.elements:
             for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
-                if free_only and not self.project.is_free(connector): continue
+                if free_only and not self.project.can_accept_connection(connector): continue
                 screen = self.world_to_screen(element.pose_at(endpoint).point)
                 distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
                 priority = 0 if endpoint.startswith("magnet:") else 1
@@ -428,7 +445,7 @@ class TrackCanvas(QWidget):
                 continue
             for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
-                if not self.project.is_free(connector):
+                if not self.project.can_accept_connection(connector):
                     continue
                 screen = self.world_to_screen(element.pose_at(endpoint).point)
                 distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
@@ -438,7 +455,7 @@ class TrackCanvas(QWidget):
 
     def _append_to_active(self, kind: str, angle: float) -> None:
         connector = self.active_connector
-        if not connector or not self.project.is_free(connector): return
+        if not connector or not self.project.can_accept_connection(connector): return
         before = deepcopy(self.project); before_connector = connector; before_selection = self._selection_state()
         target = self.project.connector_pose(connector)
         source_element = self.project.element_by_id(connector.element_id)
@@ -497,7 +514,7 @@ class TrackCanvas(QWidget):
                 if other.element_type != element.element_type: continue
                 for candidate_endpoint in other.connector_names:
                     candidate = ConnectorRef(other.id, candidate_endpoint)
-                    if not self.project.is_free(candidate): continue
+                    if not self.project.can_accept_connection(candidate): continue
                     stationary = other.pose_at(candidate_endpoint)
                     target = TrackProject.connection_target_pose(
                         own, candidate, stationary
@@ -535,7 +552,7 @@ class TrackCanvas(QWidget):
                         continue
                     for candidate_endpoint in other.connector_names:
                         candidate = ConnectorRef(other.id, candidate_endpoint)
-                        if not self.project.is_free(candidate):
+                        if not self.project.can_accept_connection(candidate):
                             continue
                         stationary = other.pose_at(candidate_endpoint)
                         target = TrackProject.connection_target_pose(
@@ -659,10 +676,29 @@ class TrackCanvas(QWidget):
                    for other in self.project.elements if other.id != element.id)
 
     def overlapping_element_ids(self) -> set[str]:
-        connected_pairs = {
-            frozenset((connection.first.element_id, connection.second.element_id))
-            for connection in self.project.connections
-        }
+        # All branches belonging to one connector component form a legitimate
+        # junction. They must not warn about the small, intentional overlap at
+        # the shared point, even when two branches are linked through a third
+        # element rather than by their own TrackConnection record.
+        junctions: list[set[ConnectorRef]] = []
+        for connection in self.project.connections:
+            matching = [group for group in junctions
+                        if connection.first in group or connection.second in group]
+            if not matching:
+                junctions.append({connection.first, connection.second})
+                continue
+            combined = {connection.first, connection.second}
+            for group in matching:
+                combined.update(group)
+                junctions.remove(group)
+            junctions.append(combined)
+        connected_pairs: set[frozenset[str]] = set()
+        for junction in junctions:
+            element_ids = {connector.element_id for connector in junction}
+            for first_id in element_ids:
+                for second_id in element_ids:
+                    if first_id != second_id:
+                        connected_pairs.add(frozenset((first_id, second_id)))
         overlaps: set[str] = set()
         for index, first in enumerate(self.project.elements):
             first_shape = self._road_shape(first)
@@ -706,11 +742,106 @@ class TrackCanvas(QWidget):
                 self._drag_ignored_pairs.remove(pair)
 
     def _move_selection_safely(self, dx: float, dy: float) -> tuple[float, float]:
-        elements = [item for item in self.project.elements if item.id in self.selected_ids]
+        moving_ids = self.selected_ids | self._drag_joint_followers
+        elements = [item for item in self.project.elements if item.id in moving_ids]
         dx, dy = self.project.clamp_group_translation(elements, dx, dy)
         if abs(dx) <= 1e-12 and abs(dy) <= 1e-12: return 0.0, 0.0
         for item in elements: item.moved(dx, dy)
+        for element_id, (hinge, _fixed, fixed_point) in self._drag_joint_bridges.items():
+            element = self.project.element_by_id(element_id)
+            if element is None:
+                continue
+            hinge_connection = self.project.connection_for(hinge)
+            if hinge_connection is None:
+                continue
+            anchor = (hinge_connection.second if hinge_connection.first == hinge
+                      else hinge_connection.first)
+            hinge_point = self.project.connector_pose(anchor).point
+            self._reshape_straight_between_joints(
+                element, hinge.endpoint, hinge_point, fixed_point
+            )
         return dx, dy
+
+    @staticmethod
+    def _reshape_straight_between_joints(element: TrackElement, hinge_endpoint: str,
+                                         hinge_point: Point, fixed_point: Point) -> None:
+        if hinge_endpoint == "start":
+            element.start = hinge_point
+            element.heading_deg = degrees(atan2(
+                fixed_point.y - hinge_point.y,
+                fixed_point.x - hinge_point.x,
+            )) % 360
+        else:
+            element.start = fixed_point
+            element.heading_deg = degrees(atan2(
+                hinge_point.y - fixed_point.y,
+                hinge_point.x - fixed_point.x,
+            )) % 360
+        element.length = max(0.05, hypot(
+            fixed_point.x - hinge_point.x,
+            fixed_point.y - hinge_point.y,
+        ))
+
+    def _junction_connectors(self, connector: ConnectorRef) -> set[ConnectorRef]:
+        result = {connector}
+        pending = [connector]
+        while pending:
+            current = pending.pop()
+            for connection in self.project.connections_for(current):
+                peer = connection.second if connection.first == current else connection.first
+                if peer not in result:
+                    result.add(peer)
+                    pending.append(peer)
+        return result
+
+    def _move_boundary_junction_to(self, connector: ConnectorRef, point: Point) -> bool:
+        junction = self._junction_connectors(connector)
+        if len(junction) < 2:
+            return False
+        originals: dict[str, TrackElement] = {}
+        for member in junction:
+            element = self.project.element_by_id(member.element_id)
+            if (element is None or element.element_type != "boundary"
+                    or member.endpoint not in {"start", "end"}
+                    or element.id in originals):
+                continue
+            originals[element.id] = deepcopy(element)
+            other_endpoint = "end" if member.endpoint == "start" else "start"
+            fixed_point = element.pose_at(other_endpoint).point
+            if element.kind == "straight":
+                self._reshape_straight_between_joints(
+                    element, member.endpoint, point, fixed_point
+                )
+            else:
+                start = point if member.endpoint == "start" else fixed_point
+                end = fixed_point if member.endpoint == "start" else point
+                chord = hypot(end.x - start.x, end.y - start.y)
+                half_angle = radians(abs(element.signed_angle_deg) / 2)
+                if chord <= 1e-6 or abs(sin(half_angle)) <= 1e-9:
+                    for element_id, original in originals.items():
+                        self._restore_element_geometry(
+                            self.project.element_by_id(element_id), original
+                        )
+                    return False
+                radius = chord / (2 * sin(half_angle))
+                if radius < element.minimum_centerline_radius:
+                    for element_id, original in originals.items():
+                        self._restore_element_geometry(
+                            self.project.element_by_id(element_id), original
+                        )
+                    return False
+                bearing = degrees(atan2(end.y - start.y, end.x - start.x))
+                element.start = start
+                element.heading_deg = (bearing - element.signed_angle_deg / 2) % 360
+                element.radius = radius
+        if not all(self.project.element_fits_hall(self.project.element_by_id(element_id))
+                   for element_id in originals):
+            for element_id, original in originals.items():
+                self._restore_element_geometry(
+                    self.project.element_by_id(element_id), original
+                )
+            return False
+        return bool(originals)
 
     @staticmethod
     def _restore_element_geometry(element: TrackElement, before: TrackElement) -> None:
@@ -966,6 +1097,8 @@ class TrackCanvas(QWidget):
     def _draw_area_caption(self, painter: QPainter, grid: float) -> None:
         text = (f"{self._tr('Track area')}  {self.project.hall_length:g} m × "
                 f"{self.project.hall_width:g} m  |  {self._tr('Grid {grid} m', grid=grid)}")
+        if self.project_name:
+            text += f"  |  {self.project_name}"
         width = self.fontMetrics().horizontalAdvance(text) + 14
         caption = QRectF(8, 6, width, 24)
         background = QColor(self._colors["canvas"])
@@ -1170,8 +1303,18 @@ class TrackCanvas(QWidget):
             element = self.project.element_by_id(connector.element_id)
             self.selected = element
             self.selected_ids = {element.id}
-            self.active_connector = connector if self.project.is_free(connector) else None
-            if (connector.endpoint.startswith("magnet:")
+            self.active_connector = (connector if self.project.can_accept_connection(connector)
+                                     else None)
+            if (self.project.editor_mode == "indoor"
+                    and element.element_type == "boundary"
+                    and connector.endpoint in {"start", "end"}
+                    and self.project.connections_for(connector)):
+                self._junction_drag_connector = connector
+                self._junction_drag_started = False
+                self._junction_drag_before = deepcopy(self.project)
+                self._junction_drag_before_selection = self._selection_state()
+                self._junction_drag_before_connector = self.active_connector
+            elif (connector.endpoint.startswith("magnet:")
                     and element.element_type == "boundary"
                     and element.kind == "straight"):
                 self._magnet_drag_connector = connector
@@ -1180,7 +1323,8 @@ class TrackCanvas(QWidget):
                 self._magnet_drag_before_selection = self._selection_state()
                 self._magnet_drag_before_connector = self.active_connector
             other_endpoint = "end" if connector.endpoint == "start" else "start"
-            if (connector.endpoint in {"start", "end"}
+            if (self._junction_drag_connector is None
+                    and connector.endpoint in {"start", "end"}
                     and self.active_connector
                     and (self.project.connection_for(ConnectorRef(element.id, other_endpoint))
                          or (element.element_type == "boundary"
@@ -1292,7 +1436,7 @@ class TrackCanvas(QWidget):
         before = deepcopy(self.project)
         before_selection = self._selection_state()
         before_connector = self.active_connector
-        self.project.disconnect(connector)
+        self.project.disconnect_all(connector)
         del element.magnet_points[point_id]
         self.selected = element
         self.selected_ids = {element.id}
@@ -1302,13 +1446,12 @@ class TrackCanvas(QWidget):
                             before_selection, before_connector)
         return True
 
-    def _directly_attached_element(self, connector: ConnectorRef) -> str | None:
-        """Return only the element directly attached to a custom magnet point."""
-        connection = self.project.connection_for(connector)
-        if connection is None:
-            return None
-        peer = connection.second if connection.first == connector else connection.first
-        return peer.element_id
+    def _directly_attached_connectors(self, connector: ConnectorRef) -> list[ConnectorRef]:
+        """Return every element connector attached to a custom magnet point."""
+        return [
+            connection.second if connection.first == connector else connection.first
+            for connection in self.project.connections_for(connector)
+        ]
 
     def _move_magnet_point_to(self, connector: ConnectorRef, position: QPointF) -> bool:
         element = self.project.element_by_id(connector.element_id)
@@ -1330,19 +1473,22 @@ class TrackCanvas(QWidget):
         element.magnet_points[point_id] = fraction
         new_point = element.pose_at(connector.endpoint).point
         move_x, move_y = new_point.x - old_point.x, new_point.y - old_point.y
-        attached_id = self._directly_attached_element(connector)
-        if attached_id is not None:
-            # Only the directly attached element follows. Its other links are
-            # released so the remaining layout stays exactly where it is.
-            primary = self.project.connection_for(connector)
-            self.project.connections = [
-                item for item in self.project.connections
-                if item == primary
-                or (item.first.element_id != attached_id
-                    and item.second.element_id != attached_id)
-            ]
+        for peer in self._directly_attached_connectors(connector):
+            attached_id = peer.element_id
             attached = self.project.element_by_id(attached_id)
-            if attached is not None:
+            other_endpoint = ("end" if peer.endpoint == "start" else "start")
+            other_connector = (ConnectorRef(attached_id, other_endpoint)
+                               if peer.endpoint in {"start", "end"} else None)
+            other_connection = (self.project.connection_for(other_connector)
+                                if other_connector else None)
+            if (attached is not None and attached.kind == "straight"
+                    and attached.element_type == "boundary"
+                    and other_connection is not None):
+                fixed_point = attached.pose_at(other_endpoint).point
+                self._reshape_straight_between_joints(
+                    attached, peer.endpoint, new_point, fixed_point
+                )
+            elif attached is not None:
                 attached.start = Point(attached.start.x + move_x,
                                        attached.start.y + move_y)
         return True
@@ -1403,7 +1549,9 @@ class TrackCanvas(QWidget):
         if clicked and clicked.id not in self.selected_ids:
             self.selected = clicked
             self.selected_ids = {clicked.id}
-            self.active_connector = connector if connector and self.project.is_free(connector) else None
+            self.active_connector = (connector if connector
+                                     and self.project.can_accept_connection(connector)
+                                     else None)
             self.selection_changed.emit(clicked)
             self.update()
         can_delete = bool(clicked and clicked.id in self.selected_ids)
@@ -1437,6 +1585,16 @@ class TrackCanvas(QWidget):
         elif self._selecting_rect:
             self._rubber_band.setGeometry(QRect(
                 self._rubber_origin, event.position().toPoint()).normalized())
+        elif self._junction_drag_connector:
+            if not self._junction_drag_started and delta.manhattanLength() > 0:
+                self._junction_drag_started = True
+            if self._junction_drag_started:
+                self._move_boundary_junction_to(
+                    self._junction_drag_connector,
+                    self.screen_to_world(event.position()),
+                )
+                self.selection_changed.emit(self.selected)
+                self.update()
         elif self._magnet_drag_connector:
             if not self._magnet_drag_started and delta.manhattanLength() > 0:
                 self._magnet_drag_started = True
@@ -1471,6 +1629,36 @@ class TrackCanvas(QWidget):
                     first_selected = connection.first.element_id in self.selected_ids
                     second_selected = connection.second.element_id in self.selected_ids
                     if first_selected != second_selected:
+                        selected_connector = connection.first if first_selected else connection.second
+                        peer_connector = connection.second if first_selected else connection.first
+                        selected_element = self.project.element_by_id(selected_connector.element_id)
+                        keep_as_joint = (
+                            self.project.editor_mode == "indoor"
+                            and selected_connector.endpoint.startswith("magnet:")
+                            and selected_element is not None
+                            and selected_element.element_type == "boundary"
+                            and selected_element.kind == "straight"
+                        )
+                        if keep_as_joint:
+                            peer_element = self.project.element_by_id(peer_connector.element_id)
+                            other_endpoint = ("end" if peer_connector.endpoint == "start"
+                                              else "start")
+                            other_connector = ConnectorRef(peer_connector.element_id,
+                                                           other_endpoint)
+                            other_connection = self.project.connection_for(other_connector)
+                            if (peer_element is not None
+                                    and peer_element.element_type == "boundary"
+                                    and peer_element.kind == "straight"
+                                    and peer_connector.endpoint in {"start", "end"}
+                                    and other_connection is not None):
+                                self._drag_joint_bridges[peer_connector.element_id] = (
+                                    peer_connector,
+                                    other_connector,
+                                    peer_element.pose_at(other_endpoint).point,
+                                )
+                            else:
+                                self._drag_joint_followers.add(peer_connector.element_id)
+                            continue
                         self._drag_ignored_pairs.add(frozenset((connection.first.element_id, connection.second.element_id)))
                         self.project.connections.remove(connection)
                 self._remember_initial_overlaps()
@@ -1478,7 +1666,8 @@ class TrackCanvas(QWidget):
                 self._drag_started = True
             moved_dx, moved_dy = self._move_selection_safely(dx, dy)
             self._forget_resolved_overlaps()
-            candidate = (self._find_snap(self.selected)
+            candidate = (None if self._drag_joint_followers or self._drag_joint_bridges else
+                         self._find_snap(self.selected)
                          if len(self.selected_ids) == 1 else self._find_group_snap())
             self.snap_preview = (candidate[1], candidate[2]) if candidate else None
             self.update()
@@ -1514,6 +1703,23 @@ class TrackCanvas(QWidget):
                 self._commit_change(text, before, selection, self.active_connector)
             else:
                 self.update()
+            return
+        if self._junction_drag_connector:
+            if (self._junction_drag_started
+                    and self._junction_drag_before is not None
+                    and self.project != self._junction_drag_before):
+                self._commit_change(
+                    self._tr("Move boundary joint"),
+                    self._junction_drag_before,
+                    self._junction_drag_before_selection,
+                    self._junction_drag_before_connector,
+                )
+            self._junction_drag_connector = None
+            self._junction_drag_started = False
+            self._junction_drag_before = None
+            self._junction_drag_before_selection = None
+            self._junction_drag_before_connector = None
+            self.update()
             return
         if self._magnet_drag_connector:
             if self._magnet_drag_started:
@@ -1575,13 +1781,19 @@ class TrackCanvas(QWidget):
             self.update()
             return
         if self._dragging_element and self.selected and self._drag_started:
-            if not self.project.element_fits_hall(self.selected):
+            changed_ids = (self.selected_ids | self._drag_joint_followers
+                           | set(self._drag_joint_bridges))
+            if not all(self.project.element_fits_hall(element)
+                       for element in self.project.elements
+                       if element.id in changed_ids):
                 self._restore_without_signal(self._drag_before, self._drag_before_selection,
                                              self._drag_before_connector)
                 self.selection_changed.emit(self.selected); self.update()
                 self.status_message.emit(self._tr("The element would extend beyond the track area."))
             else:
-                if len(self.selected_ids) == 1:
+                if self._drag_joint_followers or self._drag_joint_bridges:
+                    pass
+                elif len(self.selected_ids) == 1:
                     self._snap_element(self.selected)
                 else:
                     self._snap_group()
@@ -1592,6 +1804,8 @@ class TrackCanvas(QWidget):
         self._drag_started = False
         self._drag_before = None
         self._drag_ignored_pairs.clear()
+        self._drag_joint_followers.clear()
+        self._drag_joint_bridges.clear()
         self.unsetCursor()
         if self.placement:
             self.setCursor(Qt.CursorShape.CrossCursor)
@@ -1638,7 +1852,11 @@ class TrackCanvas(QWidget):
         # Verhindert einen hängenbleibenden Pan-Modus, wenn Alt+Tab oder ein
         # anderes Fenster den KeyRelease-/MouseRelease-Event übernimmt.
         if self._dragging_element and self.selected and self._drag_started and self._drag_before is not None:
-            if self.project.element_fits_hall(self.selected):
+            changed_ids = (self.selected_ids | self._drag_joint_followers
+                           | set(self._drag_joint_bridges))
+            if all(self.project.element_fits_hall(element)
+                   for element in self.project.elements
+                   if element.id in changed_ids):
                 self._commit_change(self._tr("Move element"), self._drag_before,
                                     self._drag_before_selection, self._drag_before_connector)
             else:
@@ -1649,6 +1867,13 @@ class TrackCanvas(QWidget):
         if self._resize_started and self._resize_before is not None:
             self._restore_without_signal(self._resize_before, self._resize_before_selection,
                                          self._resize_before_connector)
+            self.selection_changed.emit(self.selected); self.update()
+        if self._junction_drag_started and self._junction_drag_before is not None:
+            self._restore_without_signal(
+                self._junction_drag_before,
+                self._junction_drag_before_selection,
+                self._junction_drag_before_connector,
+            )
             self.selection_changed.emit(self.selected); self.update()
         if self._magnet_drag_started and self._magnet_drag_before is not None:
             self._restore_without_signal(
@@ -1678,8 +1903,15 @@ class TrackCanvas(QWidget):
         self._magnet_drag_before = None
         self._magnet_drag_before_selection = None
         self._magnet_drag_before_connector = None
+        self._junction_drag_connector = None
+        self._junction_drag_started = False
+        self._junction_drag_before = None
+        self._junction_drag_before_selection = None
+        self._junction_drag_before_connector = None
         self.snap_preview = None
         self._drag_ignored_pairs.clear()
+        self._drag_joint_followers.clear()
+        self._drag_joint_bridges.clear()
         self.unsetCursor()
         if self.placement:
             self.setCursor(Qt.CursorShape.CrossCursor)

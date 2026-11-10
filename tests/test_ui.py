@@ -118,6 +118,48 @@ def test_properties_dock_can_be_restored_from_view_menu():
     window.close()
 
 
+def test_window_branding_and_project_name_are_kept_separate():
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    assert window.windowTitle() == "RC Track Designer"
+    assert not window.windowIcon().isNull()
+    assert window.canvas.project_name == ""
+
+    window.current_path = Path("Herrenhaide2.rct.json")
+    window.dirty = True
+    window._update_title()
+
+    assert window.windowTitle() == "RC Track Designer"
+    assert window.canvas.project_name == "Herrenhaide2"
+    window.dirty = False
+    window.close()
+
+
+def test_view_menu_is_presented_as_settings_menu():
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    assert window.view_menu.title() == window.tr_text("Settings")
+    assert window.settings_action in window.view_menu.actions()
+    window.close()
+
+
+def test_about_dialog_identifies_beta_two(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    captured = {}
+    monkeypatch.setattr(
+        "rc_track_designer.ui.QMessageBox.about",
+        lambda parent, title, text: captured.update(title=title, text=text),
+    )
+
+    window.about()
+
+    assert "RC Track Designer 0.4.0 Beta 2" in captured["text"]
+    window.close()
+
+
 def test_copy_paste_shortcuts_and_half_metre_straight_steps():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()

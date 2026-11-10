@@ -255,8 +255,24 @@ class TrackProject:
     def connection_for(self, connector: ConnectorRef) -> TrackConnection | None:
         return next((item for item in self.connections if item.contains(connector)), None)
 
+    def connections_for(self, connector: ConnectorRef) -> list[TrackConnection]:
+        return [item for item in self.connections if item.contains(connector)]
+
+    def is_multi_connection_connector(self, connector: ConnectorRef) -> bool:
+        element = self.element_by_id(connector.element_id)
+        return bool(
+            element is not None
+            and element.element_type == "boundary"
+            and connector.endpoint in element.connector_names
+        )
+
     def is_free(self, connector: ConnectorRef) -> bool:
         return self.element_by_id(connector.element_id) is not None and self.connection_for(connector) is None
+
+    def can_accept_connection(self, connector: ConnectorRef) -> bool:
+        return (self.element_by_id(connector.element_id) is not None
+                and (self.is_free(connector)
+                     or self.is_multi_connection_connector(connector)))
 
     @staticmethod
     def connection_target_pose(moving: ConnectorRef, stationary: ConnectorRef,
@@ -289,7 +305,12 @@ class TrackProject:
         if (first_element is None or second_element is None
                 or first_element.element_type != second_element.element_type):
             raise ValueError("Only elements of the same category can be connected")
-        if not self.is_free(first) or not self.is_free(second): raise ValueError("Both connectors must be free")
+        if (not self.can_accept_connection(first)
+                or not self.can_accept_connection(second)):
+            raise ValueError("Both connectors must accept a connection")
+        if any(item.contains(first) and item.contains(second)
+               for item in self.connections):
+            raise ValueError("The connection already exists")
         distance, angle = self.connector_alignment_error(first, second)
         if (first_element.element_type == "track"
                 and (distance > 1e-6 or angle > 1e-6)):
@@ -310,6 +331,11 @@ class TrackProject:
         if connection is not None: self.connections.remove(connection)
         return connection
 
+    def disconnect_all(self, connector: ConnectorRef) -> list[TrackConnection]:
+        removed = self.connections_for(connector)
+        self.connections = [item for item in self.connections if item not in removed]
+        return removed
+
     def remove_element(self, element: TrackElement) -> None:
         self.disconnect_element(element.id)
         self.elements.remove(element)
@@ -322,7 +348,9 @@ class TrackProject:
                 raise ValueError("Self-connections are not valid")
             for connector in (connection.first, connection.second):
                 if connector.element_id not in ids: raise ValueError("Connection references an unknown element")
-                if connector in occupied: raise ValueError("A connector cannot have multiple connections")
+                if (connector in occupied
+                        and not self.is_multi_connection_connector(connector)):
+                    raise ValueError("A connector cannot have multiple connections")
                 occupied.add(connector)
             first_element = self.element_by_id(connection.first.element_id)
             second_element = self.element_by_id(connection.second.element_id)

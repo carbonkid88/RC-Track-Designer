@@ -1,5 +1,5 @@
-RC Track Designer v0.4.0 beta 1 - Windows 64 Bit
-=================================================
+RC Track Designer v0.4.0 Beta 2 - Windows 64 Bit
+================================================
 
 SYSTEMVORAUSSETZUNGEN
 - Windows 10 oder Windows 11, jeweils 64 Bit
@@ -22,7 +22,7 @@ DATEN UND EINSTELLUNGEN
   Benutzerordner abgelegt, nicht im Programmordner.
 
 SPRACHE UND THEME
-Unter Ansicht > Einstellungen kann zwischen Deutsch/Englisch und Hell/Dunkel
+Unter Einstellungen > Einstellungen kann zwischen Deutsch/Englisch und Hell/Dunkel
 gewechselt werden.
 
 BEARBEITUNGSMODI
@@ -32,7 +32,7 @@ BEARBEITUNGSMODI
 - Vor einem Moduswechsel müssen ungespeicherte Änderungen gespeichert werden.
   Der Zielmodus beginnt anschließend mit einem leeren Streckenbereich.
 
-Weitere Hinweise stehen in README.md und RELEASE_NOTES_v0.4.0-beta1.md.
+Weitere Hinweise stehen in README.md und RELEASE_NOTES_v0.4.0-beta2.md.
 
 LIZENZ
 Die vollständigen Lizenzbedingungen stehen in LICENSE.txt und im Programm unter

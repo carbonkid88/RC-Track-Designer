@@ -12,8 +12,8 @@ def test_project_roundtrip(tmp_path):
     save_project(project, target)
     assert load_project(target) == project
     data = json.loads(target.read_text(encoding="utf-8"))
-    assert data["app_version"] == "0.4.0"
-    assert data["format_version"] == 4
+    assert data["app_version"] == "0.4.0-beta.2"
+    assert data["format_version"] == 5
     assert data["guides"] == {"x": [3.5, 12.0], "y": [4.5]}
 
 def test_v1_project_without_connections_remains_loadable(tmp_path):
@@ -47,6 +47,26 @@ def test_same_end_connection_roundtrip(tmp_path):
     assert loaded == project
     assert loaded.connections[0].first.endpoint == "start"
     assert loaded.connections[0].second.endpoint == "start"
+
+
+def test_indoor_multi_connection_junction_roundtrip(tmp_path):
+    anchor = TrackElement("straight", Point(2, 2), length=6, width=0.1,
+                          element_type="boundary", magnet_points={"junction": 0.5})
+    first = TrackElement("straight", Point(5, 2), heading_deg=90, length=2,
+                         width=0.1, element_type="boundary")
+    second = TrackElement("straight", Point(5, 2), heading_deg=270, length=2,
+                          width=0.1, element_type="boundary")
+    project = TrackProject(20, 12, [anchor, first, second], editor_mode="indoor")
+    junction = ConnectorRef(anchor.id, "magnet:junction")
+    project.connect(junction, ConnectorRef(first.id, "start"))
+    project.connect(junction, ConnectorRef(second.id, "start"))
+    target = tmp_path / "junction.rct.json"
+
+    save_project(project, target)
+    loaded = load_project(target)
+
+    assert loaded == project
+    assert len(loaded.connections_for(junction)) == 2
 
 
 def test_stale_connection_does_not_prevent_loading_or_remove_elements(tmp_path):

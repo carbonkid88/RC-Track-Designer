@@ -224,7 +224,7 @@ def test_indoor_rendering_uses_fixed_carpet_grid_and_boundary_colors():
     canvas.close()
 
 
-def test_format_four_roundtrip_preserves_mode_categories_connections_and_units(tmp_path):
+def test_current_format_roundtrip_preserves_mode_categories_connections_and_units(tmp_path):
     first = boundary(start=Point(2, 2), length=2, width=0.15)
     second = boundary(start=first.end_pose.point, length=3, width=0.15)
     project = TrackProject(20, 12, [first, second], editor_mode="indoor")
@@ -232,7 +232,7 @@ def test_format_four_roundtrip_preserves_mode_categories_connections_and_units(t
     path = tmp_path / "indoor.rct.json"
     save_project(project, path)
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["format_version"] == FORMAT_VERSION == 4
+    assert raw["format_version"] == FORMAT_VERSION == 5
     loaded = load_project(path)
     assert loaded.editor_mode == "indoor"
     assert [item.element_type for item in loaded.elements] == ["boundary", "boundary"]
@@ -316,6 +316,145 @@ def test_boundary_endpoint_snaps_to_added_magnet_point():
     app.processEvents()
 
 
+def test_custom_magnet_point_accepts_two_attached_boundaries():
+    anchor = boundary(start=Point(2, 2), length=6,
+                      magnet_points={"junction": 0.5})
+    first = boundary(start=Point(5, 2), length=2, heading_deg=90)
+    second = boundary(start=Point(5, 2), length=2, heading_deg=270)
+    project = TrackProject(20, 12, [anchor, first, second], editor_mode="indoor")
+    junction = ConnectorRef(anchor.id, "magnet:junction")
+
+    project.connect(junction, ConnectorRef(first.id, "start"))
+    project.connect(junction, ConnectorRef(second.id, "start"))
+
+    assert len(project.connections_for(junction)) == 2
+    assert project.can_accept_connection(junction)
+    project.validate_connections()
+
+
+def test_snap_can_add_another_boundary_to_occupied_custom_magnet():
+    app = QApplication.instance() or QApplication([])
+    anchor = boundary(start=Point(2, 2), length=6,
+                      magnet_points={"junction": 0.5})
+    first = boundary(start=Point(5, 2), length=2, heading_deg=90)
+    moving = boundary(start=Point(5.12, 2.08), length=2, heading_deg=90)
+    junction = ConnectorRef(anchor.id, "magnet:junction")
+    project = TrackProject(20, 12, [anchor, first, moving], editor_mode="indoor")
+    project.connect(junction, ConnectorRef(first.id, "start"))
+    canvas = TrackCanvas()
+    canvas.scale = 40
+    canvas.set_project(project)
+
+    assert canvas._snap_element(moving)
+    assert len(canvas.project.connections_for(junction)) == 2
+    app.processEvents()
+
+
+def test_curve_straight_junction_accepts_and_snaps_a_third_boundary():
+    app = QApplication.instance() or QApplication([])
+    straight = boundary(start=Point(2, 3), length=3)
+    curve = boundary("left", start=Point(5, 3), radius=2, angle_deg=45)
+    moving = boundary(start=Point(5.12, 3.08), length=2, heading_deg=90)
+    junction = ConnectorRef(straight.id, "end")
+    project = TrackProject(20, 12, [straight, curve, moving], editor_mode="indoor")
+    project.connect(junction, ConnectorRef(curve.id, "start"))
+    canvas = TrackCanvas()
+    canvas.scale = 40
+    canvas.set_project(project)
+
+    assert canvas._snap_element(moving)
+    assert len(canvas.project.connections_for(junction)) == 2
+    assert canvas.project.connector_alignment_error(
+        junction, ConnectorRef(moving.id, "start"))[0] == pytest.approx(0)
+    canvas.project.validate_connections()
+    app.processEvents()
+
+
+def test_branches_at_same_multi_junction_do_not_show_overlap_warning():
+    app = QApplication.instance() or QApplication([])
+    host = boundary(start=Point(2, 3), length=3)
+    curve = boundary("left", start=Point(5, 3), radius=2, angle_deg=45)
+    diagonal = boundary(start=Point(5, 3), length=2, heading_deg=45)
+    junction = ConnectorRef(host.id, "end")
+    project = TrackProject(20, 12, [host, curve, diagonal], editor_mode="indoor")
+    project.connect(junction, ConnectorRef(curve.id, "start"))
+    project.connect(junction, ConnectorRef(diagonal.id, "start"))
+    canvas = TrackCanvas()
+    canvas.scale = 40
+    canvas.set_project(project)
+
+    assert canvas._shapes_overlap(canvas._road_shape(curve),
+                                  canvas._road_shape(diagonal))
+    assert canvas.overlapping_element_ids() == set()
+    app.processEvents()
+
+
+def test_dragging_connected_endpoint_reshapes_two_straights_as_joints():
+    app = QApplication.instance() or QApplication([])
+    first = boundary(start=Point(2, 2), length=3)
+    second = boundary(start=Point(5, 2), length=3, heading_deg=45)
+    junction = ConnectorRef(first.id, "end")
+    second_start = ConnectorRef(second.id, "start")
+    project = TrackProject(20, 12, [first, second], editor_mode="indoor")
+    project.connect(junction, second_start)
+    fixed_first = first.start
+    fixed_second = second.end_pose.point
+    canvas = TrackCanvas()
+    canvas.resize(900, 650)
+    canvas.set_project(project)
+    canvas.show(); app.processEvents()
+
+    start = canvas.world_to_screen(Point(5, 2)).toPoint()
+    destination = canvas.world_to_screen(Point(5, 3)).toPoint()
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(canvas, destination)
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=destination)
+
+    moved_first = canvas.project.element_by_id(first.id)
+    moved_second = canvas.project.element_by_id(second.id)
+    assert moved_first.start == fixed_first
+    assert moved_second.end_pose.point.x == pytest.approx(fixed_second.x)
+    assert moved_second.end_pose.point.y == pytest.approx(fixed_second.y)
+    assert moved_first.end_pose.point.x == pytest.approx(5, abs=0.02)
+    assert moved_first.end_pose.point.y == pytest.approx(3, abs=0.02)
+    assert moved_second.start.x == pytest.approx(5, abs=0.02)
+    assert moved_second.start.y == pytest.approx(3, abs=0.02)
+    assert canvas.project.connection_for(junction) is not None
+
+    canvas.undo_stack.undo()
+    assert canvas.project.element_by_id(first.id).end_pose.point == Point(5, 2)
+    assert canvas.project.element_by_id(second.id).start == Point(5, 2)
+    canvas.close()
+
+
+def test_moving_curve_straight_joint_keeps_opposite_connectors_fixed():
+    curve = boundary("left", start=Point(3, 3), radius=3, angle_deg=60)
+    straight = boundary(start=curve.end_pose.point, length=4,
+                        heading_deg=curve.end_pose.heading_deg)
+    curve_end = ConnectorRef(curve.id, "end")
+    straight_start = ConnectorRef(straight.id, "start")
+    project = TrackProject(20, 12, [curve, straight], editor_mode="indoor")
+    project.connect(curve_end, straight_start)
+    canvas = TrackCanvas()
+    canvas.set_project(project)
+    fixed_curve_start = curve.start
+    fixed_straight_end = straight.end_pose.point
+    target = Point(curve.end_pose.point.x + 0.5, curve.end_pose.point.y + 0.5)
+
+    assert canvas._move_boundary_junction_to(curve_end, target)
+
+    moved_curve = canvas.project.element_by_id(curve.id)
+    moved_straight = canvas.project.element_by_id(straight.id)
+    assert moved_curve.start == fixed_curve_start
+    assert moved_curve.end_pose.point.x == pytest.approx(target.x)
+    assert moved_curve.end_pose.point.y == pytest.approx(target.y)
+    assert moved_straight.start.x == pytest.approx(target.x)
+    assert moved_straight.start.y == pytest.approx(target.y)
+    assert moved_straight.end_pose.point.x == pytest.approx(fixed_straight_end.x)
+    assert moved_straight.end_pose.point.y == pytest.approx(fixed_straight_end.y)
+    assert canvas.project.connection_for(curve_end) is not None
+
+
 def test_dragging_connected_magnet_point_moves_attached_boundary_and_is_undoable():
     app = QApplication.instance() or QApplication([])
     anchor = boundary(start=Point(2, 2), length=8,
@@ -350,7 +489,7 @@ def test_dragging_connected_magnet_point_moves_attached_boundary_and_is_undoable
     canvas.close()
 
 
-def test_dragging_magnet_moves_only_direct_element_and_releases_its_next_link():
+def test_dragging_magnet_keeps_next_joint_and_reshapes_direct_straight():
     app = QApplication.instance() or QApplication([])
     anchor = boundary(start=Point(2, 2), length=8,
                       magnet_points={"custom": 0.25})
@@ -373,13 +512,59 @@ def test_dragging_magnet_moves_only_direct_element_and_releases_its_next_link():
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=destination)
 
     assert canvas.project.element_by_id(direct.id).start.x == pytest.approx(5, abs=0.02)
+    assert canvas.project.element_by_id(direct.id).length == pytest.approx(1, abs=0.02)
     assert canvas.project.element_by_id(remainder.id).start == Point(6, 2)
     assert canvas.project.connection_for(magnet) is not None
-    assert canvas.project.connection_for(next_link) is None
+    assert canvas.project.connection_for(next_link) is not None
     canvas.undo_stack.undo()
     assert canvas.project.element_by_id(direct.id).start == Point(4, 2)
     assert canvas.project.element_by_id(remainder.id).start == Point(6, 2)
     assert canvas.project.connection_for(next_link) is not None
+    canvas.close()
+
+
+def test_moving_straight_keeps_both_joints_and_adjusts_bridge_only():
+    app = QApplication.instance() or QApplication([])
+    anchor = boundary(start=Point(2, 2), length=8,
+                      magnet_points={"custom": 0.25})
+    direct = boundary(start=Point(4, 2), length=2, heading_deg=90)
+    remainder = boundary(start=Point(4, 4), length=2, heading_deg=90)
+    magnet = ConnectorRef(anchor.id, "magnet:custom")
+    direct_start = ConnectorRef(direct.id, "start")
+    direct_end = ConnectorRef(direct.id, "end")
+    project = TrackProject(20, 12, [anchor, direct, remainder], editor_mode="indoor")
+    project.connect(magnet, direct_start)
+    project.connect(direct_end, ConnectorRef(remainder.id, "start"))
+    canvas = TrackCanvas()
+    canvas.resize(900, 650)
+    canvas.set_project(project)
+    canvas.show(); app.processEvents()
+
+    start = canvas.world_to_screen(Point(3, 2)).toPoint()
+    destination = canvas.world_to_screen(Point(3, 3)).toPoint()
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(canvas, destination)
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=destination)
+
+    moved_anchor = canvas.project.element_by_id(anchor.id)
+    moved_direct = canvas.project.element_by_id(direct.id)
+    assert moved_anchor.start.x == pytest.approx(2)
+    assert moved_anchor.start.y == pytest.approx(3, abs=0.02)
+    assert moved_direct.start.x == pytest.approx(4)
+    assert moved_direct.start.y == pytest.approx(3, abs=0.02)
+    assert moved_direct.length == pytest.approx(1, abs=0.02)
+    assert canvas.project.connection_for(magnet) is not None
+    assert canvas.project.connector_alignment_error(magnet, direct_start)[0] == pytest.approx(0)
+    assert canvas.project.connection_for(direct_end) is not None
+    assert canvas.project.connector_alignment_error(
+        direct_end, ConnectorRef(remainder.id, "start"))[0] == pytest.approx(0)
+    assert canvas.project.element_by_id(remainder.id).start == Point(4, 4)
+
+    canvas.undo_stack.undo()
+    assert canvas.project.element_by_id(anchor.id).start == Point(2, 2)
+    assert canvas.project.element_by_id(direct.id).start == Point(4, 2)
+    assert canvas.project.connection_for(magnet) is not None
+    assert canvas.project.connection_for(direct_end) is not None
     canvas.close()
 
 

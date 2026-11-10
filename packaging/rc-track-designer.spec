@@ -8,7 +8,7 @@ project_root = Path(SPECPATH).parent
 source_root = project_root / "src"
 package_root = source_root / "rc_track_designer"
 entry_point = project_root / "packaging" / "rc_track_designer_entry.py"
-distribution_name = "RC-Track-Designer_v0.4.0-beta1"
+distribution_name = "RC-Track-Designer_v0.4.0-beta2"
 
 datas = [
     (str(package_root / "locales"), "rc_track_designer/locales"),
@@ -16,7 +16,7 @@ datas = [
     (str(project_root / "LICENSE.txt"), "."),
     (str(project_root / "packaging" / "START_HERE.txt"), "."),
     (str(project_root / "README.md"), "."),
-    (str(project_root / "packaging" / "RELEASE_NOTES_v0.4.0-beta1.md"), "."),
+    (str(project_root / "packaging" / "RELEASE_NOTES_v0.4.0-beta2.md"), "."),
 ]
 
 analysis = Analysis(
@@ -45,6 +45,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(package_root / "assets" / "rc_track_designer.ico"),
     disable_windowed_traceback=False,
 )
 

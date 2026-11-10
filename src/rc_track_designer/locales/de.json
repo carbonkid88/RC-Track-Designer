@@ -19,6 +19,7 @@
     "Add magnet point": "Magnetpunkt einfügen",
     "Remove magnet point": "Magnetpunkt entfernen",
     "Move magnet point": "Magnetpunkt verschieben",
+    "Move boundary joint": "Begrenzungsgelenk verschieben",
     "Copy selection": "Auswahl kopieren",
     "Paste": "Einfügen",
     "Close track…": "Strecke schließen…",
@@ -152,7 +153,7 @@
     "Choose an editing mode": "Bearbeitungsmodus wählen",
     "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.": "Der normale Modus erzeugt gefüllte Fahrbahnelemente. Der Hallenmodus zeigt durchgehend gelbe Begrenzungen auf anthrazitfarbenem Teppich. Vor dem Moduswechsel müssen ungespeicherte Änderungen gespeichert werden. Der gewählte Modus startet anschließend mit einem leeren Streckenbereich gleicher Abmessungen.",
     "Add magnet points": "Magnetpunkte einfügen",
-    "In indoor mode, right-click a straight barrier to add a magnet point. Drag the point along the straight; only the directly attached barrier moves with it and its next connection is released. Right-click an added magnet point to remove it.": "Klicke im Hallenmodus mit der rechten Maustaste auf eine gerade Begrenzung, um einen Magnetpunkt einzufügen. Ziehe den Punkt entlang der Geraden; nur die unmittelbar angedockte Begrenzung wird mitgeführt und ihre nächste Verbindung wird gelöst. Mit einem Rechtsklick auf den Magnetpunkt entfernst du ihn wieder.",
+    "In indoor mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it.": "Klicke im Hallenmodus mit der rechten Maustaste auf eine gerade Begrenzung, um einen Magnetpunkt einzufügen. An jedem Begrenzungsanschluss können mehrere Geraden und Kurven zusammentreffen, auch an bereits verbundenen Endpunkten. Ziehe einen verbundenen Endpunkt, um das Gelenk zu verschieben; angrenzende Elemente passen ihre Geometrie an, während die gegenüberliegenden Anschlüsse feststehen. Zusatzpunkte lassen sich entlang ihrer Geraden ziehen. Mit einem Rechtsklick auf den Magnetpunkt entfernst du ihn wieder.",
     "Grid {grid} m": "Raster {grid} m",
     "2D layout editor for RC race tracks.\nInternal unit: metres.": "2D-Layouteditor für RC-Rennstrecken.\nInterne Einheit: Meter."
   }

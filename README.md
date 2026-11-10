@@ -1,6 +1,6 @@
 # RC Track Designer
 
-RC Track Designer v0.4.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Mittellinie.
+RC Track Designer v0.4.0 Beta 2 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Mittellinie.
 
 ## Screenshots
 
@@ -24,7 +24,7 @@ RC Track Designer v0.4.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-R
 - Die Moduswahl befindet sich in der Maßleiste. Vor dem Umschalten müssen ungespeicherte Änderungen gespeichert werden; Abbrechen lässt das aktuelle Projekt unverändert. Der gewählte Modus beginnt anschließend mit einem leeren Streckenbereich gleicher Abmessungen.
 - Gerade Begrenzungen verwenden Längen in Metern. Kurven verwenden Mittellinienradius in Metern und Winkel in Grad. Die Begrenzungsbreite wird als 5, 10, 15, 20 oder 25 cm eingegeben; intern werden alle Werte in Meter gespeichert.
 - Begrenzungen dürfen frei stehen, mehrere unabhängige Ketten bilden oder magnetisch verbunden werden. Sie verbinden sich ausschließlich mit anderen Begrenzungen, niemals mit normalen Fahrbahnelementen.
-- Mit einem Rechtsklick auf eine gerade Begrenzung lassen sich zusätzliche Magnetpunkte einfügen; ein Rechtsklick auf einen solchen Punkt entfernt ihn wieder. Die Punkte lassen sich entlang der Geraden verschieben und bewegen nur die unmittelbar daran angedockte Begrenzung mit. Deren weitere Verbindung wird dabei gelöst, damit der übrige Streckenverlauf unverändert bleibt. Außerdem bewegen, drehen und skalieren die Punkte sich mit ihrer Geraden.
+- Mit einem Rechtsklick auf eine gerade Begrenzung lassen sich zusätzliche Magnetpunkte einfügen; ein Rechtsklick auf einen solchen Punkt entfernt ihn wieder. An jedem Anschluss von Begrenzungen können mehrere Geraden und Kurven zusammentreffen, auch an bereits verbundenen Segmentenden. Verbundene Segmentenden lassen sich direkt als Gelenk ziehen; angrenzende Geraden ändern dabei Länge und Winkel, Kurven ihren Mittellinienradius, während die jeweils gegenüberliegenden Anschlüsse stehen bleiben. Zusatzpunkte lassen sich entlang ihrer Geraden verschieben. Wird die Trägergerade verschoben, bleiben die Verbindungen ebenfalls wie Gelenke erhalten.
 - Auswahl, Mehrfachauswahl, Verschieben, 360°-Drehung, Kopieren, Löschen und Undo/Redo funktionieren in beiden Modi gleich.
 
 ## Installation und Start
@@ -57,7 +57,7 @@ $env:PYTHONPATH = "src"
 - Lineale an der oberen X- und linken Y-Achse zeigen die Meterpositionen passend zum aktuellen Zoom.
 - Aus den Linealen lassen sich magentafarbene Hilfslinien in 0,5-m-Schritten in den Streckenbereich ziehen. Vorhandene Hilfslinien können erneut gezogen sowie durch Herausziehen oder Rechtsklick gelöscht werden.
 - Projekte werden als versioniertes `*.rct.json` gespeichert und geladen.
-- Unter `Ansicht > Einstellungen` kann zwischen hellem und dunklem Theme sowie Deutsch und Englisch gewechselt werden. Die Auswahl wird gespeichert.
+- Unter `Einstellungen > Einstellungen` kann zwischen hellem und dunklem Theme sowie Deutsch und Englisch gewechselt werden. Die Auswahl wird gespeichert.
 
 ## Smart Track Building
 
@@ -129,7 +129,7 @@ Eine Sprachdatei hat dieses Format:
 
 Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übersetzungen schrittweise ergänzt werden, ohne den Programmstart zu verhindern.
 
-## Bekannte Einschränkungen in v0.4.0
+## Bekannte Einschränkungen in v0.4.0 Beta 2
 
 - Verbundene Elementgruppen können gemeinsam verschoben, aber noch nicht als Gruppe gedreht werden.
 - Hilfslinien können noch nicht gesperrt werden.
@@ -154,7 +154,7 @@ geteilt werden.
 
 # RC Track Designer — English
 
-RC Track Designer v0.4.0 is a scale-accurate 2D layout editor for RC car race
+RC Track Designer v0.4.0 Beta 2 is a scale-accurate 2D layout editor for RC car race
 tracks. Metres are used internally, and curve radii refer to the track
 centreline.
 
@@ -180,7 +180,7 @@ centreline.
 - The mode selector is located in the dimensions toolbar. Unsaved changes must be saved before switching; cancelling keeps the current project unchanged. The selected mode then starts with an empty track area of the same dimensions.
 - Straight barrier length and curve centreline radius are entered in metres; curve angles use degrees. Barrier width is selected as 5, 10, 15, 20, or 25 cm and is always stored internally in metres.
 - Barriers may be freestanding, form multiple independent chains, or snap magnetically. They connect only to other barriers, never to normal track elements.
-- Right-click a straight barrier to add another magnet point; right-click that point to remove it. Added points can be dragged along the straight and carry only the directly attached barrier with them. Any further connection of that barrier is released so the rest of the layout remains unchanged. The points also move, rotate, and scale with their straight.
+- Right-click a straight barrier to add another magnet point; right-click that point to remove it. Multiple straights and curves may meet at every barrier connector, including already connected segment endpoints. Connected endpoints can be dragged directly as joints; adjacent straights adjust length and angle, while curves adjust their centreline radius and the opposite connectors remain fixed. Added points can be dragged along their straight. Connections also remain jointed when the host straight is moved.
 - Selection, multi-selection, moving, full 360-degree rotation, copying, deletion, and Undo/Redo work consistently in both modes.
 
 ## Installation and startup
@@ -213,7 +213,7 @@ $env:PYTHONPATH = "src"
 - Rulers along the upper X-axis and left Y-axis display metre positions for the current zoom level.
 - Magenta guides can be dragged from the rulers and snap in 0.5 m steps. Existing guides can be moved again or removed by dragging them out of the area or by right-clicking.
 - Projects are saved and loaded as versioned `*.rct.json` files.
-- Under `View > Settings`, choose the light or dark theme and switch between German and English. The selection is retained.
+- Under `Settings > Settings`, choose the light or dark theme and switch between German and English. The selection is retained.
 
 ## Smart Track Building
 
@@ -298,7 +298,7 @@ A language file has this structure:
 Missing entries fall back to English, so translations can be completed
 incrementally without preventing application startup.
 
-## Known limitations in v0.4.0
+## Known limitations in v0.4.0 Beta 2
 
 - Connected element groups can be moved together, but they cannot yet be rotated as a group.
 - Guides cannot yet be locked.
