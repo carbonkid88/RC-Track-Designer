@@ -2,6 +2,21 @@
 
 RC Track Designer v0.4.0 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Mittellinie.
 
+## Screenshots
+
+<table>
+  <tr>
+    <th width="33%">Programmübersicht</th>
+    <th width="33%">Klassischer Modus – fertiges Layout</th>
+    <th width="33%">Hallenmodus – Begrenzungslayout</th>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/application-overview.png" alt="RC Track Designer Programmübersicht" width="100%"></td>
+    <td><img src="docs/screenshots/classic-track-mode.png" alt="Klassischer Streckenmodus mit fertigem Streckenlayout" width="100%"></td>
+    <td><img src="docs/screenshots/indoor-mode.png" alt="Hallenmodus mit fertigem Begrenzungslayout" width="100%"></td>
+  </tr>
+</table>
+
 ## Normaler Modus und Hallenmodus
 
 - **Normaler Modus:** der bisherige Editor für gefüllte Fahrbahnelemente mit einstellbarer Fahrbahnbreite.
@@ -120,6 +135,21 @@ Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übe
 - Hilfslinien können noch nicht gesperrt werden.
 - Wenn beide möglichen Bogenlagen beim automatischen Weiterbauen gleich gut passen, wählt der Editor deterministisch eine davon. Die Kurve kann anschließend gelöst, frei gedreht und über den gewünschten Anschluss neu angedockt werden.
 
+## Roadmap – geplant für v0.5.0
+
+> **Geplant, noch nicht implementiert:** Die folgenden Funktionen sind für den
+> nächsten Entwicklungsschritt vorgesehen und können sich anhand des Feedbacks
+> aus dem Betatest noch ändern.
+
+- **Start-/Ziellinie:** Eine Start-/Ziellinie auf der Strecke platzieren und anpassen.
+- **Zählschleife / Timing Loop:** Eine separate Markierung für die Transponder-Zählschleife hinzufügen.
+- **Nummerierte Startplätze:** Nummerierte Startpositionen mit einstellbarem Abstand anlegen.
+- **Fahrerstandfläche:** Eine frei positionierbare Fläche mit einstellbaren Abmessungen markieren.
+
+**Feedback willkommen!** Fehlermeldungen, Verbesserungsvorschläge und Erfahrungen
+mit der Beta können gerne über [GitHub Issues](https://github.com/carbonkid88/RC-Track-Designer/issues)
+geteilt werden.
+
 ---
 
 # RC Track Designer — English
@@ -127,6 +157,21 @@ Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übe
 RC Track Designer v0.4.0 is a scale-accurate 2D layout editor for RC car race
 tracks. Metres are used internally, and curve radii refer to the track
 centreline.
+
+## Screenshots
+
+<table>
+  <tr>
+    <th width="33%">Application overview</th>
+    <th width="33%">Classic mode – finished layout</th>
+    <th width="33%">Indoor mode – barrier layout</th>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/application-overview.png" alt="RC Track Designer application overview" width="100%"></td>
+    <td><img src="docs/screenshots/classic-track-mode.png" alt="Classic track mode with a finished track layout" width="100%"></td>
+    <td><img src="docs/screenshots/indoor-mode.png" alt="Indoor mode with a finished barrier layout" width="100%"></td>
+  </tr>
+</table>
 
 ## Normal and indoor modes
 
@@ -258,3 +303,16 @@ incrementally without preventing application startup.
 - Connected element groups can be moved together, but they cannot yet be rotated as a group.
 - Guides cannot yet be locked.
 - If both possible curve orientations are equally suitable during automatic continuation, the editor deterministically chooses one. The curve can then be released, freely rotated and snapped through the desired connector.
+
+## Roadmap – planned for v0.5.0
+
+> **Planned, not yet implemented:** The following features are intended for the
+> next development milestone and may change based on feedback from beta testers.
+
+- **Start/Finish Line:** Place and adjust a start/finish line on the track.
+- **Timing Loop:** Add a separate timing transponder loop marker.
+- **Starting Grid:** Create numbered starting positions with adjustable spacing.
+- **Drivers' Stand Area:** Mark a freely positionable area with adjustable dimensions.
+
+**Feedback welcome!** Please use [GitHub Issues](https://github.com/carbonkid88/RC-Track-Designer/issues)
+to report bugs, suggest improvements, or share your experience with the beta version.
