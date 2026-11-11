@@ -7,12 +7,17 @@ from math import atan2, cos, degrees, hypot, radians, sin
 from uuid import uuid4
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QContextMenuEvent, QFocusEvent, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPainterPathStroker, QPen, QPolygonF, QUndoStack, QWheelEvent
+from PySide6.QtGui import QColor, QContextMenuEvent, QFocusEvent, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen, QUndoStack, QWheelEvent
 from PySide6.QtWidgets import QMenu, QRubberBand, QWidget
 
 from .commands import ProjectStateCommand
 from .closure import ClosureProposal, propose_closure
 from .model import ConnectorRef, Point, Pose, TrackConnection, TrackElement, TrackProject
+from .rendering import (
+    connection_bridge_polygon,
+    element_centerline_path,
+    element_filled_shape,
+)
 
 
 class TrackCanvas(QWidget):
@@ -634,35 +639,15 @@ class TrackCanvas(QWidget):
         return True
 
     def _element_path(self, element: TrackElement) -> QPainterPath:
-        path = QPainterPath(self.world_to_screen(element.start))
-        if element.kind == "straight":
-            path.lineTo(self.world_to_screen(element.end_pose.point))
-            return path
-        turn = 1 if element.kind == "left" else -1
-        heading = radians(element.heading_deg)
-        center = Point(
-            element.start.x - turn * element.radius * sin(heading),
-            element.start.y + turn * element.radius * cos(heading),
-        )
-        center_screen = self.world_to_screen(center)
-        radius_px = element.radius * self.scale
-        circle = QRectF(center_screen.x() - radius_px, center_screen.y() - radius_px,
-                        2 * radius_px, 2 * radius_px)
-        # arcTo() inserts a line when the current point differs even by a
-        # fraction of a pixel from Qt's internally approximated arc start.
-        # With a wide road pen that microscopic line creates a large round
-        # join (the visible "nose" on rotated curves). arcMoveTo avoids it.
-        path = QPainterPath()
-        path.arcMoveTo(circle, element.heading_deg - turn * 90)
-        path.arcTo(circle, element.heading_deg - turn * 90, element.signed_angle_deg)
-        return path
+        return element_centerline_path(element, self.world_to_screen, self.scale)
 
     def _road_shape(self, element: TrackElement) -> QPainterPath:
-        stroker = QPainterPathStroker()
-        stroker.setWidth(max(0.1, element.width * self.scale - 0.5))
-        stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
-        stroker.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        return stroker.createStroke(self._element_path(element))
+        return element_filled_shape(
+            element,
+            self.world_to_screen,
+            self.scale,
+            width_adjustment=0.5,
+        )
 
     @staticmethod
     def _shapes_overlap(first: QPainterPath, second: QPainterPath) -> bool:
@@ -1146,23 +1131,15 @@ class TrackCanvas(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         for connection in self.project.connections:
             first = self.project.element_by_id(connection.first.element_id)
-            second = self.project.element_by_id(connection.second.element_id)
             painter.setBrush(QColor("#F4CC2E" if first.element_type == "boundary"
                                     else self._colors["track"]))
-            pose = self.project.connector_pose(connection.first)
-            point = self.world_to_screen(pose.point)
-            half_width = min(first.width, second.width) * self.scale / 2
-            half_depth = 1.5
-            angle = radians(pose.heading_deg)
-            tangent = QPointF(cos(angle), -sin(angle))
-            normal = QPointF(sin(angle), cos(angle))
-            polygon = QPolygonF([
-                point - tangent * half_depth - normal * half_width,
-                point + tangent * half_depth - normal * half_width,
-                point + tangent * half_depth + normal * half_width,
-                point - tangent * half_depth + normal * half_width,
-            ])
-            painter.drawPolygon(polygon)
+            painter.drawPolygon(connection_bridge_polygon(
+                self.project,
+                connection,
+                self.world_to_screen,
+                self.scale,
+                half_depth=1.5,
+            ))
         # Outline the actual road contour instead of drawing a second, wider
         # road underneath it. The old halo produced wedges and uneven caps on
         # selected 75°–90° curves.
