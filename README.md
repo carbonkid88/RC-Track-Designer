@@ -146,9 +146,16 @@ Fehlende Einträge fallen automatisch auf Englisch zurück. Dadurch können Übe
 - **Nummerierte Startplätze:** Nummerierte Startpositionen mit einstellbarem Abstand anlegen.
 - **Fahrerstandfläche:** Eine frei positionierbare Fläche mit einstellbaren Abmessungen markieren.
 
-**Feedback willkommen!** Fehlermeldungen, Verbesserungsvorschläge und Erfahrungen
-mit der Beta können gerne über [GitHub Issues](https://github.com/carbonkid88/RC-Track-Designer/issues)
-geteilt werden.
+## Feedback & Fehlermeldungen
+
+Rückmeldungen, Fehlermeldungen und Verbesserungsvorschläge sind jederzeit willkommen!
+
+Wenn du einen Fehler entdeckst oder eine Idee zur Verbesserung des RC Track Designers hast, kannst du dich hier melden:
+
+- **E-Mail:** [rctrackdesigner@web.de](mailto:rctrackdesigner@web.de)
+- **GitHub Issues:** Über den [Issues-Bereich](https://github.com/carbonkid88/RC-Track-Designer/issues) dieses Repositories kannst du Fehler melden oder neue Funktionen vorschlagen.
+
+Bitte gib bei Fehlermeldungen möglichst die Programmversion, eine kurze Fehlerbeschreibung und gegebenenfalls einen Screenshot oder die betroffene `.rct.json`-Projektdatei an.
 
 ---
 
@@ -314,5 +321,13 @@ incrementally without preventing application startup.
 - **Starting Grid:** Create numbered starting positions with adjustable spacing.
 - **Drivers' Stand Area:** Mark a freely positionable area with adjustable dimensions.
 
-**Feedback welcome!** Please use [GitHub Issues](https://github.com/carbonkid88/RC-Track-Designer/issues)
-to report bugs, suggest improvements, or share your experience with the beta version.
+## Feedback & Bug Reports
+
+Feedback, bug reports and suggestions for improvement are always welcome!
+
+If you encounter a problem or have an idea for improving RC Track Designer, please contact us:
+
+- **Email:** [rctrackdesigner@web.de](mailto:rctrackdesigner@web.de)
+- **GitHub Issues:** Use the [Issues section](https://github.com/carbonkid88/RC-Track-Designer/issues) of this repository to report bugs or suggest features.
+
+When reporting a bug, please include the application version, a short description of the problem and, if possible, a screenshot or the affected `.rct.json` project file.

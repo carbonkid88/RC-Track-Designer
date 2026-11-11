@@ -122,7 +122,7 @@ def test_window_branding_and_project_name_are_kept_separate():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
 
-    assert window.windowTitle() == "RC Track Designer"
+    assert window.windowTitle() == "RC Track Designer 0.4.0 Beta 2"
     assert not window.windowIcon().isNull()
     assert window.canvas.project_name == ""
 
@@ -130,7 +130,7 @@ def test_window_branding_and_project_name_are_kept_separate():
     window.dirty = True
     window._update_title()
 
-    assert window.windowTitle() == "RC Track Designer"
+    assert window.windowTitle() == "RC Track Designer 0.4.0 Beta 2"
     assert window.canvas.project_name == "Herrenhaide2"
     window.dirty = False
     window.close()

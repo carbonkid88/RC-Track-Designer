@@ -4,7 +4,7 @@
 
 ### Geändert
 
-- Einheitlicher Fenstertitel „RC Track Designer“ mit eigenem RC-Track-Designer-Logo im Fenstersymbol
+- Fenstertitel „RC Track Designer 0.4.0 Beta 2“ mit eigenem RC-Track-Designer-Logo im Fenstersymbol
 - Der Name eines geladenen oder gespeicherten Projekts steht nun direkt neben Streckenbereich und Rasterangabe auf der Zeichenfläche
 - Das bisherige Menü „Ansicht“ heißt jetzt treffender „Einstellungen“
 - Im Hallenmodus bleiben Verbindungen an zusätzlichen Magnetpunkten beim Verschieben ihrer Trägergeraden als Gelenkkette erhalten; eine verbindende Gerade richtet sich zwischen den Gelenken neu aus, ohne den übrigen Verlauf mitzubewegen

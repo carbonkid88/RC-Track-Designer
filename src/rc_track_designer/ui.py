@@ -550,7 +550,7 @@ class MainWindow(QMainWindow):
             self._apply_mode_ui()
 
     def _update_title(self) -> None:
-        self.setWindowTitle("RC Track Designer")
+        self.setWindowTitle(f"RC Track Designer {__release_name__}")
         project_name = ""
         if self.current_path:
             filename = self.current_path.name
