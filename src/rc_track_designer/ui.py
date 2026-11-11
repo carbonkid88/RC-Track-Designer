@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence, QPixmap
+from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 from PySide6.QtWidgets import (
     QAbstractSpinBox, QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QDockWidget, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
@@ -17,6 +18,14 @@ from . import __release_name__
 from .canvas import TrackCanvas
 from .i18n import TranslationManager
 from .model import TrackElement, TrackProject
+from .printing import (
+    LayoutPrintPreviewDialog,
+    PrintOptions,
+    PrintOptionsDialog,
+    configure_printer,
+    pdf_printer,
+    render_project_to_printer,
+)
 from .storage import load_project, save_project
 from .themes import apply_theme
 
@@ -73,6 +82,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.current_path: Path | None = None
         self.dirty = False
+        self.print_options = PrintOptions()
         self.canvas = TrackCanvas()
         self.setCentralWidget(self.canvas)
         self._create_actions()
@@ -103,6 +113,15 @@ class MainWindow(QMainWindow):
         self.open_action = self._action(tr("Open…"), self.open_project, QKeySequence.StandardKey.Open)
         self.save_action = self._action(tr("Save"), self.save, QKeySequence.StandardKey.Save)
         self.save_as_action = self._action(tr("Save as…"), self.save_as, QKeySequence.StandardKey.SaveAs)
+        self.print_preview_action = self._action(
+            tr("Print preview"), self.show_print_preview
+        )
+        self.print_action = self._action(
+            tr("Print…"), self.print_project, QKeySequence.StandardKey.Print
+        )
+        self.export_pdf_action = self._action(
+            tr("Export as PDF…"), self.export_pdf
+        )
         self.exit_action = self._action(tr("Exit"), self.close, QKeySequence.StandardKey.Quit)
         self.delete_action = self._action(tr("Delete selection"), self.canvas.delete_selected, QKeySequence.StandardKey.Delete)
         self.delete_action.setEnabled(False)
@@ -132,6 +151,12 @@ class MainWindow(QMainWindow):
         self.file_menu = self.menuBar().addMenu(tr("File"))
         file_menu = self.file_menu
         file_menu.addActions([self.new_action, self.open_action, self.save_action, self.save_as_action])
+        file_menu.addSeparator()
+        file_menu.addActions([
+            self.print_preview_action,
+            self.print_action,
+            self.export_pdf_action,
+        ])
         file_menu.addSeparator(); file_menu.addAction(self.exit_action)
         self.edit_menu = self.menuBar().addMenu(tr("Edit")); edit = self.edit_menu
         edit.addActions([self.undo_action, self.redo_action]); edit.addSeparator()
@@ -702,6 +727,11 @@ class MainWindow(QMainWindow):
             (self.about_action, "About RC Track Designer"),
             (self.straight_action, "Straight"), (self.undo_action, "Undo"), (self.redo_action, "Redo"),
         )
+        actions += (
+            (self.print_preview_action, "Print preview"),
+            (self.print_action, "Print…"),
+            (self.export_pdf_action, "Export as PDF…"),
+        )
         for action, source in actions: action.setText(tr(source))
         self.mode_label.setText(f" {tr('Editing mode:')} ")
         current_mode = self.canvas.project.editor_mode
@@ -742,6 +772,108 @@ class MainWindow(QMainWindow):
         self._sync_properties(self.canvas.selected)
         self.canvas.set_appearance({}, tr)
         self._update_title()
+
+    def _project_print_title(self) -> str:
+        if self.current_path:
+            filename = self.current_path.name
+            return (filename[:-9] if filename.lower().endswith(".rct.json")
+                    else self.current_path.stem)
+        return self.tr_text("Untitled")
+
+    def _choose_print_options(self) -> PrintOptions | None:
+        dialog = PrintOptionsDialog(
+            self.print_options,
+            self.tr_text,
+            self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        self.print_options = dialog.options()
+        return self.print_options
+
+    def show_print_preview(self) -> None:
+        dialog = LayoutPrintPreviewDialog(
+            self.canvas.project,
+            self.print_options,
+            self._project_print_title(),
+            self.tr_text,
+            self,
+        )
+        dialog.exec()
+        self.print_options = dialog.options()
+
+    def print_project(self) -> bool:
+        options = self._choose_print_options()
+        if options is None:
+            return False
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        configure_printer(printer, options)
+        dialog = QPrintDialog(printer, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        try:
+            render_project_to_printer(
+                printer,
+                self.canvas.project,
+                options,
+                title=self._project_print_title(),
+                tr=self.tr_text,
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, self.tr_text("Print failed"), str(error))
+            return False
+        self.statusBar().showMessage(self.tr_text("Print job created."), 4000)
+        return True
+
+    def export_pdf(self) -> bool:
+        options = self._choose_print_options()
+        if options is None:
+            return False
+        suggested = self._project_print_title() or "layout"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr_text("Export as PDF"),
+            f"{suggested}.pdf",
+            self.tr_text("PDF files (*.pdf)"),
+        )
+        if not filename:
+            return False
+        path = Path(filename)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+        if path.exists():
+            box = QMessageBox(
+                QMessageBox.Icon.Question,
+                self.tr_text("Replace PDF?"),
+                self.tr_text("The PDF already exists. Replace it?"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                self,
+            )
+            box.button(QMessageBox.StandardButton.Yes).setText(
+                self.tr_text("Replace")
+            )
+            box.button(QMessageBox.StandardButton.No).setText(
+                self.tr_text("Cancel")
+            )
+            if QMessageBox.StandardButton(box.exec()) != QMessageBox.StandardButton.Yes:
+                return False
+        try:
+            render_project_to_printer(
+                pdf_printer(path, options),
+                self.canvas.project,
+                options,
+                title=self._project_print_title(),
+                tr=self.tr_text,
+            )
+            if not path.is_file() or path.stat().st_size == 0:
+                raise OSError(self.tr_text("The PDF file could not be created."))
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, self.tr_text("PDF export failed"), str(error))
+            return False
+        self.statusBar().showMessage(
+            self.tr_text("PDF exported: {path}", path=path), 4000
+        )
+        return True
 
     def _can_discard(self) -> bool:
         if not self.dirty: return True
