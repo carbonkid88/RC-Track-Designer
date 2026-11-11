@@ -2,6 +2,8 @@
 
 RC Track Designer v0.4.0 Beta 2 ist ein maßstabsgetreuer 2D-Layouteditor für RC-Car-Rennstrecken. Die Anwendung verwendet intern Meter; Kurvenradien beziehen sich auf die Mittellinie.
 
+Neben klassischen Streckenlayouts richtet sich der Editor an Vereine und Fahrer im **Indoor Carpet Racing**, die **Temporary Track Layouts** (temporäre Streckenlayouts) planen. Ein typischer Einsatz sind Teppichstrecken in gemeinsam genutzten Sporthallen von Schulen oder Sportvereinen: Die Strecke wird für Training oder Rennen aufgebaut und anschließend wieder abgebaut.
+
 ## Screenshots
 
 <table>
@@ -17,10 +19,10 @@ RC Track Designer v0.4.0 Beta 2 ist ein maßstabsgetreuer 2D-Layouteditor für R
   </tr>
 </table>
 
-## Normaler Modus und Hallenmodus
+## Klassischer Streckenmodus und Hallenmodus
 
-- **Normaler Modus:** der bisherige Editor für gefüllte Fahrbahnelemente mit einstellbarer Fahrbahnbreite.
-- **Hallenmodus:** freier Editor für temporäre Indoor-Streckenbegrenzungen auf anthrazitfarbenem Hallenteppich. Begrenzungen werden als durchgehend gelbe, maßstabsgetreue Geometrie ohne automatisch gefüllte Fahrbahn dargestellt.
+- **Classic Track Mode (klassischer Streckenmodus):** Im Programm als „Normaler Modus“ bezeichnet. Hier planst du den Fahrbahnverlauf mit gefüllten Geraden und Kurven sowie einstellbarer Fahrbahnbreite.
+- **Indoor Carpet Track Mode (Hallenmodus):** Im Programm als „Hallenmodus“ bezeichnet. Hier planst du die Anordnung der Begrenzungen für temporäre Teppichstrecken. Die Begrenzungen werden als durchgehend gelbe, maßstabsgetreue Geometrie auf anthrazitfarbenem Hallenteppich dargestellt; eine gefüllte Fahrbahn wird nicht automatisch erzeugt.
 - Die Moduswahl befindet sich in der Maßleiste. Vor dem Umschalten müssen ungespeicherte Änderungen gespeichert werden; Abbrechen lässt das aktuelle Projekt unverändert. Der gewählte Modus beginnt anschließend mit einem leeren Streckenbereich gleicher Abmessungen.
 - Gerade Begrenzungen verwenden Längen in Metern. Kurven verwenden Mittellinienradius in Metern und Winkel in Grad. Die Begrenzungsbreite wird als 5, 10, 15, 20 oder 25 cm eingegeben; intern werden alle Werte in Meter gespeichert.
 - Begrenzungen dürfen frei stehen, mehrere unabhängige Ketten bilden oder magnetisch verbunden werden. Sie verbinden sich ausschließlich mit anderen Begrenzungen, niemals mit normalen Fahrbahnelementen.
@@ -165,6 +167,11 @@ RC Track Designer v0.4.0 Beta 2 is a scale-accurate 2D layout editor for RC car 
 tracks. Metres are used internally, and curve radii refer to the track
 centreline.
 
+Alongside classic track layouts, the editor is designed for clubs and racers in
+**Indoor Carpet Racing** who plan **Temporary Track Layouts**. A typical use case
+is a carpet track in a shared school or sports club hall, set up for practice
+or a race meeting and dismantled afterwards.
+
 ## Screenshots
 
 <table>
@@ -180,10 +187,10 @@ centreline.
   </tr>
 </table>
 
-## Normal and indoor modes
+## Classic Track Mode and Indoor Carpet Track Mode
 
-- **Normal mode** retains the established editor for filled track elements and adjustable track width.
-- **Indoor mode** is a free barrier editor for temporary indoor layouts. It uses an anthracite carpet, a subtle white grid, and solid yellow scale-accurate barriers without generating a filled driving surface.
+- **Classic Track Mode** (called `Normal mode` in the application): Plan the driving surface using filled straights and curves with adjustable track width.
+- **Indoor Carpet Track Mode** (called `Indoor mode` in the application): Plan the barrier arrangement for temporary carpet tracks. It uses an anthracite carpet, a subtle white grid, and solid yellow scale-accurate barriers without generating a filled driving surface.
 - The mode selector is located in the dimensions toolbar. Unsaved changes must be saved before switching; cancelling keeps the current project unchanged. The selected mode then starts with an empty track area of the same dimensions.
 - Straight barrier length and curve centreline radius are entered in metres; curve angles use degrees. Barrier width is selected as 5, 10, 15, 20, or 25 cm and is always stored internally in metres.
 - Barriers may be freestanding, form multiple independent chains, or snap magnetically. They connect only to other barriers, never to normal track elements.
