@@ -40,6 +40,13 @@
     "The PDF file could not be created.": "The PDF file could not be created.",
     "PDF export failed": "PDF export failed",
     "PDF exported: {path}": "PDF exported: {path}",
+    "Measure": "Measure",
+    "Clear measurement": "Clear Measurement",
+    "Exit measurement": "Exit Measurement",
+    "Click the first measurement point.": "Click the first measurement point.",
+    "Click the second measurement point.": "Click the second measurement point.",
+    "Measured distance: {distance} m": "Measured distance: {distance} m",
+    "Clear or exit the measurement before editing elements.": "Clear or exit the measurement before editing elements.",
     "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.": "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."
   }
 }

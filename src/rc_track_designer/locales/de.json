@@ -181,6 +181,13 @@
     "The PDF file could not be created.": "Die PDF-Datei konnte nicht erstellt werden.",
     "PDF export failed": "PDF-Export fehlgeschlagen",
     "PDF exported: {path}": "PDF exportiert: {path}",
+    "Measure": "Maßband",
+    "Clear measurement": "Messung auflösen",
+    "Exit measurement": "Messung beenden",
+    "Click the first measurement point.": "Ersten Messpunkt anklicken.",
+    "Click the second measurement point.": "Zweiten Messpunkt anklicken.",
+    "Measured distance: {distance} m": "Gemessener Abstand: {distance} m",
+    "Clear or exit the measurement before editing elements.": "Vor dem Bearbeiten von Elementen die Messung auflösen oder beenden.",
     "2D layout editor for RC race tracks.\nInternal unit: metres.": "2D-Layouteditor für RC-Rennstrecken.\nInterne Einheit: Meter."
   }
 }
