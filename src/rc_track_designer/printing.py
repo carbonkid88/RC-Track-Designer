@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from .model import Point, TrackProject
+from .planning import draw_planning_object
 from .rendering import (
     connection_bridge_polygon,
     element_centerline_path,
@@ -269,6 +270,10 @@ def render_project(
                 QPen(centerline_color, centerline_width, Qt.PenStyle.DashLine)
             )
             painter.drawPath(element_centerline_path(element, map_point, scale))
+    for item in project.planning_objects:
+        draw_planning_object(
+            painter, item, map_point, scale, grayscale=options.grayscale
+        )
     painter.restore()
 
     border_width = max(0.5, dpi * 0.30 / 25.4)

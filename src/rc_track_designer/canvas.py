@@ -12,8 +12,9 @@ from PySide6.QtWidgets import QMenu, QRubberBand, QWidget
 
 from .commands import ProjectStateCommand
 from .closure import ClosureProposal, propose_closure
-from .model import ConnectorRef, Point, Pose, TrackConnection, TrackElement, TrackProject
+from .model import ConnectorRef, PlanningObject, Point, Pose, TrackConnection, TrackElement, TrackProject
 from .measuring import MeasurementState, nearest_geometry_snap
+from .planning import draw_planning_object, planning_hit_test
 from .rendering import (
     connection_bridge_polygon,
     element_centerline_path,
@@ -36,8 +37,20 @@ class TrackCanvas(QWidget):
         self.scale = 25.0
         self.pan = QPointF(35.0, 35.0)
         self.selected: TrackElement | None = None
+        self.selected_planning: PlanningObject | None = None
         self.selected_ids: set[str] = set()
         self.placement: tuple[str, float] | None = None
+        self.planning_placement: tuple[str, float] | None = None
+        self.planning_draft_start: Point | None = None
+        self.planning_draft_preview: Point | None = None
+        self.planning_draft_axis_deg: float | None = None
+        self.planning_snap_preview: Point | None = None
+        self._dragging_planning = False
+        self._planning_drag_before = None
+        self._planning_drag_offset: Point | None = None
+        self._planning_resize_endpoint: int | None = None
+        self._planning_resize_fixed: Point | None = None
+        self._planning_resize_before = None
         self.default_width = 2.0
         self.default_length = 5.0
         self.default_radius = 5.0
@@ -110,10 +123,16 @@ class TrackCanvas(QWidget):
         self.measurement.clear()
         self.project = project
         self.selected = None
+        self.selected_planning = None
         self.selected_ids.clear()
         self.active_connector = None
         self.closure_connectors.clear()
         self.placement = None
+        self.planning_placement = None
+        self.planning_draft_start = None
+        self.planning_draft_preview = None
+        self.planning_draft_axis_deg = None
+        self.planning_snap_preview = None
         self._resize_connector = None
         self._resize_started = False
         self._resize_before = None
@@ -174,6 +193,11 @@ class TrackCanvas(QWidget):
             return
         self.measurement.active = active
         self.placement = None
+        self.planning_placement = None
+        self.planning_draft_start = None
+        self.planning_draft_preview = None
+        self.planning_draft_axis_deg = None
+        self.planning_snap_preview = None
         self.clear_selection()
         if active:
             self.setCursor(Qt.CursorShape.CrossCursor)
@@ -276,6 +300,11 @@ class TrackCanvas(QWidget):
                 "Clear or exit the measurement before editing elements."
             ))
             return
+        self.planning_placement = None
+        self.planning_draft_start = None
+        self.planning_draft_preview = None
+        self.planning_draft_axis_deg = None
+        self.planning_snap_preview = None
         active_element = (self.project.element_by_id(self.active_connector.element_id)
                           if self.active_connector else None)
         wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
@@ -292,14 +321,62 @@ class TrackCanvas(QWidget):
         self.status_message.emit(self._tr("Click inside the track area to place {element}; Esc cancels.", element=label))
         self.update()
 
+    def set_planning_placement(self, kind: str, length: float = 2.0) -> None:
+        if kind not in {"start_finish", "timing_loop"}:
+            raise ValueError("Unknown planning object type")
+        if self.measurement.active:
+            self.exit_measurement()
+        self.placement = None
+        self.clear_selection()
+        self.planning_placement = (kind, max(0.1, float(length)))
+        self.planning_draft_start = None
+        self.planning_draft_preview = None
+        self.planning_draft_axis_deg = None
+        self.planning_snap_preview = None
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.status_message.emit(self._tr("Click inside the track area to place the marker."))
+
+    def cancel_planning_placement(self) -> None:
+        self.planning_placement = None
+        self.planning_draft_start = None
+        self.planning_draft_preview = None
+        self.planning_draft_axis_deg = None
+        self.planning_snap_preview = None
+        self.unsetCursor()
+        self.status_message.emit(self._tr("Selection mode"))
+        self.update()
+
     def cancel_placement(self) -> None:
         self.placement = None
         self.unsetCursor()
         self.status_message.emit(self._tr("Selection mode"))
         self.update()
 
+    def _constrain_planning_draft(self, point: Point) -> Point:
+        """Soft-snap a marker to perpendicular only inside the 85-95° window."""
+        if self.planning_draft_start is None or self.planning_draft_axis_deg is None:
+            return point
+        angle = radians(self.planning_draft_axis_deg)
+        axis_x, axis_y = cos(angle), sin(angle)
+        dx = point.x - self.planning_draft_start.x
+        dy = point.y - self.planning_draft_start.y
+        if hypot(dx, dy) <= 1e-12:
+            return point
+        pointer_angle = degrees(atan2(dy, dx)) % 180
+        axis_angle = self.planning_draft_axis_deg % 180
+        difference = abs(pointer_angle - axis_angle)
+        difference = min(difference, 180 - difference)
+        if difference > 5.0:
+            return point
+        distance = dx * axis_x + dy * axis_y
+        return Point(
+            self.planning_draft_start.x + distance * axis_x,
+            self.planning_draft_start.y + distance * axis_y,
+        )
+
     def clear_selection(self) -> None:
         self.selected = None
+        self.selected_planning = None
         self.selected_ids.clear()
         self.active_connector = None
         self.snap_preview = None
@@ -308,6 +385,92 @@ class TrackCanvas(QWidget):
         self.selection_changed.emit(None)
         self.status_message.emit(self._tr("Selection mode"))
         self.update()
+
+    def _planning_at(self, position: QPointF) -> PlanningObject | None:
+        return next((item for item in reversed(self.project.planning_objects)
+                     if planning_hit_test(item, position, self.world_to_screen)), None)
+
+    def _planning_endpoint_at(
+        self, position: QPointF,
+    ) -> tuple[PlanningObject, int] | None:
+        for item in reversed(self.project.planning_objects):
+            for index, endpoint in enumerate(item.endpoints):
+                screen = self.world_to_screen(endpoint)
+                if hypot(screen.x() - position.x(), screen.y() - position.y()) <= 8:
+                    return item, index
+        return None
+
+    def _planning_snap_point(self, point: Point) -> Point | None:
+        """Prefer explicit connector/magnet points over nearby contours."""
+        tolerance = self.measure_snap_distance_px / self.scale
+        connector_candidates: list[tuple[float, Point]] = []
+        for element in self.project.elements:
+            for endpoint in element.connector_names:
+                candidate = element.pose_at(endpoint).point
+                distance = hypot(candidate.x - point.x, candidate.y - point.y)
+                if distance <= tolerance:
+                    connector_candidates.append((distance, candidate))
+        if connector_candidates:
+            return min(connector_candidates, key=lambda candidate: candidate[0])[1]
+        contour_snap = nearest_geometry_snap(self.project, point, tolerance)
+        return contour_snap.point if contour_snap else None
+
+    @staticmethod
+    def _set_planning_endpoints(
+        item: PlanningObject, first: Point, second: Point,
+    ) -> bool:
+        dx, dy = second.x - first.x, second.y - first.y
+        length = hypot(dx, dy)
+        if length < 0.05:
+            return False
+        item.center = Point((first.x + second.x) / 2, (first.y + second.y) / 2)
+        item.length = length
+        item.heading_deg = (degrees(atan2(dy, dx)) - 90) % 360
+        return True
+
+    def _snap_planning_to_straight(self, item: PlanningObject) -> bool:
+        """Magnetically centre and orient a marker across a nearby straight."""
+        best: tuple[float, Point, TrackElement] | None = None
+        extra_tolerance = self._current_snap_distance() / self.scale
+        for element in self.project.elements:
+            if element.kind != "straight":
+                continue
+            if self._angle_difference(item.heading_deg, element.heading_deg) > 5.0:
+                continue
+            end = element.end_pose.point
+            dx, dy = end.x - element.start.x, end.y - element.start.y
+            length_squared = dx * dx + dy * dy
+            if length_squared <= 1e-12:
+                continue
+            fraction = max(0.0, min(1.0, (
+                (item.center.x - element.start.x) * dx
+                + (item.center.y - element.start.y) * dy
+            ) / length_squared))
+            point = Point(element.start.x + fraction * dx,
+                          element.start.y + fraction * dy)
+            distance = hypot(item.center.x - point.x, item.center.y - point.y)
+            tolerance = element.width / 2 + extra_tolerance
+            if distance <= tolerance and (best is None or distance < best[0]):
+                best = (distance, point, element)
+        if best is None:
+            return False
+        _distance, point, element = best
+        item.center = point
+        item.heading_deg = element.heading_deg
+        return True
+
+    def toggle_selected_planning_lock(self) -> None:
+        if not self.selected_planning:
+            return
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        self.selected_planning.locked = not self.selected_planning.locked
+        self._commit_change(
+            self._tr("Lock marker" if self.selected_planning.locked else "Unlock marker"),
+            before, before_selection, None,
+        )
+        if self.selected_planning and self.selected_planning.locked:
+            self.clear_selection()
 
     def toggle_closure_connector(self, connector: ConnectorRef) -> None:
         if not self.project.is_free(connector):
@@ -346,6 +509,20 @@ class TrackCanvas(QWidget):
                             before_selection, before_connector)
 
     def rotate_selected(self, degrees: float) -> None:
+        if self.selected_planning:
+            if self.selected_planning.locked:
+                return
+            before = deepcopy(self.project)
+            before_selection = self._selection_state()
+            self.selected_planning.rotate(degrees)
+            if not self.selected_planning.fits_hall(
+                self.project.hall_length, self.project.hall_width
+            ):
+                self._restore_without_signal(before, before_selection, None)
+                self.status_message.emit(self._tr("The object would extend beyond the track area."))
+                return
+            self._commit_change(self._tr("Rotate marker"), before, before_selection, None)
+            return
         if self.selected:
             before = deepcopy(self.project)
             before_connector = self.active_connector
@@ -361,15 +538,24 @@ class TrackCanvas(QWidget):
             self._commit_change(self._tr("Rotate element"), before, before_selection, before_connector)
 
     def can_rotate_selected(self, degrees: float) -> bool:
+        if self.selected_planning:
+            return not self.selected_planning.locked
         return bool(self.selected and self.manual_heading_allowed(
-            self.selected, self.selected.heading_deg + degrees
-        ))
+            self.selected, self.selected.heading_deg + degrees))
 
     @staticmethod
     def manual_heading_allowed(element: TrackElement, heading_deg: float) -> bool:
         return True
 
     def delete_selected(self) -> None:
+        if self.selected_planning:
+            before = deepcopy(self.project)
+            before_selection = self._selection_state()
+            self.project.planning_objects.remove(self.selected_planning)
+            self.selected_planning = None
+            self.selection_changed.emit(None)
+            self._commit_change(self._tr("Delete marker"), before, before_selection, None)
+            return
         if self.selected and self.selected in self.project.elements:
             before = deepcopy(self.project); before_selection = self._selection_state(); before_connector = self.active_connector
             if not self.selected_ids: self.selected_ids = {self.selected.id}
@@ -428,6 +614,25 @@ class TrackCanvas(QWidget):
         ))
 
     def change_selected(self, text: str, **values: float) -> None:
+        if self.selected_planning:
+            item = self.selected_planning
+            if item.locked:
+                return
+            before = deepcopy(self.project)
+            before_selection = self._selection_state()
+            if "x" in values or "y" in values:
+                item.center = Point(values.get("x", item.center.x),
+                                    values.get("y", item.center.y))
+            if "length" in values:
+                item.length = max(0.1, values["length"])
+            if "heading_deg" in values:
+                item.heading_deg = values["heading_deg"] % 360
+            if not item.fits_hall(self.project.hall_length, self.project.hall_width):
+                self._restore_without_signal(before, before_selection, None)
+                self.status_message.emit(self._tr("The object would extend beyond the track area."))
+                return
+            self._commit_change(text, before, before_selection, None)
+            return
         if not self.selected: return
         before = deepcopy(self.project); before_connector = self.active_connector; before_selection = self._selection_state()
         geometry_change = bool({"length", "radius", "angle_deg"} & values.keys())
@@ -493,6 +698,8 @@ class TrackCanvas(QWidget):
         return True
 
     def _selection_id(self) -> str | None:
+        if self.selected_planning:
+            return f"planning:{self.selected_planning.id}"
         return self.selected.id if self.selected else None
 
     def _selection_state(self):
@@ -501,7 +708,7 @@ class TrackCanvas(QWidget):
 
     def _restore_state(self, project: TrackProject, selection, connector: ConnectorRef | None) -> None:
         self._restore_without_signal(project, selection, connector)
-        self.selection_changed.emit(self.selected)
+        self.selection_changed.emit(self.selected_planning or self.selected)
         self.project_changed.emit(); self.update()
 
     def _restore_without_signal(self, project: TrackProject, selection,
@@ -513,7 +720,12 @@ class TrackCanvas(QWidget):
         else:
             selected_id = selection
             self.selected_ids = {selected_id} if selected_id and project.element_by_id(selected_id) else set()
-        self.selected = project.element_by_id(selected_id) if selected_id else None
+        planning_id = (selected_id.split(":", 1)[1]
+                       if isinstance(selected_id, str) and selected_id.startswith("planning:")
+                       else None)
+        self.selected_planning = project.planning_object_by_id(planning_id) if planning_id else None
+        self.selected = (None if planning_id else
+                         project.element_by_id(selected_id) if selected_id else None)
         self.active_connector = (connector if connector
                                  and project.can_accept_connection(connector) else None)
 
@@ -522,7 +734,7 @@ class TrackCanvas(QWidget):
         command = ProjectStateCommand(text, before, self.project, before_selection, self._selection_state(),
                                       before_connector, self.active_connector, self._restore_state)
         self.undo_stack.push(command)
-        self.selection_changed.emit(self.selected)
+        self.selection_changed.emit(self.selected_planning or self.selected)
         self.project_changed.emit(); self.update()
 
     @staticmethod
@@ -1278,11 +1490,26 @@ class TrackCanvas(QWidget):
                 continue
             painter.setPen(QPen(QColor(self._colors["centerline"]), 1, Qt.PenStyle.DashLine))
             painter.drawPath(self._element_path(element))
+        for item in self.project.planning_objects:
+            draw_planning_object(
+                painter, item, self.world_to_screen, self.scale,
+                selected=item is self.selected_planning,
+            )
+        if self.selected_planning:
+            painter.setPen(QPen(QColor("#101214"), 1))
+            painter.setBrush(QColor("#31a8ff"))
+            for endpoint in self.selected_planning.endpoints:
+                painter.drawEllipse(self.world_to_screen(endpoint), 4, 4)
         if self.snap_preview:
             painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor("#ffad24"), 3))
             for connector in self.snap_preview:
                 point = self.world_to_screen(self.project.connector_pose(connector).point)
                 painter.drawEllipse(point, 10, 10)
+        if self.planning_snap_preview is not None:
+            point = self.world_to_screen(self.planning_snap_preview)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor("#ffad24"), 3))
+            painter.drawEllipse(point, 9, 9)
         for element in self.project.elements:
             for endpoint in element.connector_names:
                 connector = ConnectorRef(element.id, endpoint)
@@ -1309,6 +1536,17 @@ class TrackCanvas(QWidget):
             painter.drawLine(pivot + QPointF(-6, 0), pivot + QPointF(6, 0))
             painter.drawLine(pivot + QPointF(0, -6), pivot + QPointF(0, 6))
         self._draw_guides(painter, hall)
+        if self.planning_placement and self.planning_draft_start is not None:
+            start = self.world_to_screen(self.planning_draft_start)
+            end = self.world_to_screen(
+                self.planning_draft_preview or self.planning_draft_start
+            )
+            painter.setPen(QPen(QColor("#ffcc20"), 3, Qt.PenStyle.SolidLine,
+                                Qt.PenCapStyle.RoundCap))
+            painter.setBrush(QColor("#ffcc20"))
+            painter.drawLine(start, end)
+            painter.drawEllipse(start, 4, 4)
+            painter.drawEllipse(end, 4, 4)
         self._draw_measurement(painter)
         painter.restore()
         painter.setPen(QPen(QColor("#111111"), 2))
@@ -1341,6 +1579,95 @@ class TrackCanvas(QWidget):
         if self.measurement.active:
             if hall.contains(position) and self.measurement.end is None:
                 self._set_measurement_point(position)
+            return
+        if self.planning_placement:
+            if hall.contains(position):
+                kind, length = self.planning_placement
+                world = self.screen_to_world(position)
+                if self.planning_draft_start is None:
+                    straight = self._hit_test(position)
+                    if kind == "start_finish" and straight and straight.kind == "straight":
+                        snap_point = self._planning_snap_point(world)
+                        self.planning_draft_start = snap_point or world
+                        self.planning_draft_axis_deg = (straight.heading_deg + 90) % 360
+                    else:
+                        self.planning_draft_start = world
+                        self.planning_draft_axis_deg = None
+                    self.planning_draft_preview = self.planning_draft_start
+                    self.status_message.emit(self._tr(
+                        "Click the second point to set marker length and direction."
+                    ))
+                    self.update()
+                    return
+                snap_point = self._planning_snap_point(world)
+                self.planning_snap_preview = snap_point
+                world = snap_point or world
+                world = self._constrain_planning_draft(world)
+                dx = world.x - self.planning_draft_start.x
+                dy = world.y - self.planning_draft_start.y
+                measured_length = hypot(dx, dy)
+                if measured_length < 0.05:
+                    self.status_message.emit(self._tr(
+                        "The marker must be at least 0.05 m long."
+                    ))
+                    return
+                before = deepcopy(self.project)
+                before_selection = self._selection_state()
+                center = Point(
+                    (self.planning_draft_start.x + world.x) / 2,
+                    (self.planning_draft_start.y + world.y) / 2,
+                )
+                item = PlanningObject(
+                    kind,
+                    center,
+                    length=measured_length,
+                    heading_deg=(degrees(atan2(dy, dx)) - 90) % 360,
+                )
+                self._snap_planning_to_straight(item)
+                if not item.fits_hall(self.project.hall_length, self.project.hall_width):
+                    self.status_message.emit(self._tr("The object would extend beyond the track area."))
+                    return
+                self.project.planning_objects.append(item)
+                self.selected = None
+                self.selected_planning = item
+                self.selected_ids.clear()
+                self.planning_placement = None
+                self.planning_draft_start = None
+                self.planning_draft_preview = None
+                self.planning_draft_axis_deg = None
+                self.planning_snap_preview = None
+                self.unsetCursor()
+                self._commit_change(self._tr("Place marker"), before, before_selection, None)
+            return
+        planning_endpoint = self._planning_endpoint_at(position)
+        if planning_endpoint:
+            planning_item, endpoint_index = planning_endpoint
+            self.selected = None
+            self.selected_planning = planning_item
+            self.selected_ids.clear()
+            self.active_connector = None
+            self.selection_changed.emit(planning_item)
+            if not planning_item.locked:
+                self._planning_resize_endpoint = endpoint_index
+                self._planning_resize_fixed = planning_item.endpoints[1 - endpoint_index]
+                self._planning_resize_before = deepcopy(self.project)
+            self.update()
+            return
+        planning_item = self._planning_at(position)
+        if planning_item:
+            self.selected = None
+            self.selected_planning = planning_item
+            self.selected_ids.clear()
+            self.active_connector = None
+            self._dragging_planning = not planning_item.locked
+            self._planning_drag_before = deepcopy(self.project)
+            pointer = self.screen_to_world(position)
+            self._planning_drag_offset = Point(
+                planning_item.center.x - pointer.x,
+                planning_item.center.y - pointer.y,
+            )
+            self.selection_changed.emit(planning_item)
+            self.update()
             return
         if not self.placement:
             existing_guide = self._guide_at(position)
@@ -1444,6 +1771,8 @@ class TrackCanvas(QWidget):
             self._dragging_element = False
             self.selection_changed.emit(self.selected); self.update(); return
         if not clicked:
+            self.selected_planning = None
+            self.selection_changed.emit(None)
             self._selecting_rect = True
             self._rubber_origin = event.position().toPoint()
             self._rubber_additive = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
@@ -1646,6 +1975,21 @@ class TrackCanvas(QWidget):
             self._build_measurement_context_menu().exec(event.globalPos())
             event.accept()
             return
+        planning_item = self._planning_at(QPointF(event.pos()))
+        if planning_item:
+            self.selected = None
+            self.selected_planning = planning_item
+            self.selected_ids.clear()
+            self.selection_changed.emit(planning_item)
+            menu = QMenu(self)
+            menu.addAction(
+                self._tr("Unlock" if planning_item.locked else "Lock"),
+                self.toggle_selected_planning_lock,
+            )
+            menu.addAction(self._tr("Delete marker"), self.delete_selected)
+            menu.exec(event.globalPos())
+            event.accept()
+            return
         connector = self._connector_at(event.pos())
         guide = self._guide_at(QPointF(event.pos()))
         connection = self.project.connection_for(connector) if connector else None
@@ -1678,6 +2022,46 @@ class TrackCanvas(QWidget):
         self._last_mouse = event.position().toPoint()
         if self._panning:
             self.pan += QPointF(delta)
+            self.update()
+        elif (self._planning_resize_endpoint is not None
+              and self.selected_planning
+              and self._planning_resize_fixed is not None):
+            world = self.screen_to_world(event.position())
+            snap_point = self._planning_snap_point(world)
+            self.planning_snap_preview = snap_point
+            moving = snap_point or world
+            if self._planning_resize_endpoint == 0:
+                first, second = moving, self._planning_resize_fixed
+            else:
+                first, second = self._planning_resize_fixed, moving
+            self._set_planning_endpoints(self.selected_planning, first, second)
+            self.selection_changed.emit(self.selected_planning)
+            self.update()
+        elif self._dragging_planning and self.selected_planning:
+            if not self.selected_planning.locked:
+                pointer = self.screen_to_world(event.position())
+                offset = self._planning_drag_offset or Point(0, 0)
+                self.selected_planning.center = Point(
+                    pointer.x + offset.x, pointer.y + offset.y,
+                )
+                self._snap_planning_to_straight(self.selected_planning)
+                self.selection_changed.emit(self.selected_planning)
+                self.update()
+        elif self.planning_placement and self.planning_draft_start is not None:
+            hall = QRectF(
+                self.pan.x(), self.pan.y(),
+                self.project.hall_length * self.scale,
+                self.project.hall_width * self.scale,
+            )
+            if hall.contains(event.position()):
+                world = self.screen_to_world(event.position())
+                snap_point = self._planning_snap_point(world)
+                self.planning_snap_preview = snap_point
+                self.planning_draft_preview = self._constrain_planning_draft(
+                    snap_point or world
+                )
+            else:
+                self.planning_snap_preview = None
             self.update()
         elif self.measurement.active:
             if self.measurement.end is None:
@@ -1799,6 +2183,52 @@ class TrackCanvas(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self._panning = False
+        if self._planning_resize_endpoint is not None and self.selected_planning:
+            before = self._planning_resize_before
+            self._planning_resize_endpoint = None
+            self._planning_resize_fixed = None
+            self._planning_resize_before = None
+            self.planning_snap_preview = None
+            if before is not None and self.project != before:
+                if self.selected_planning.fits_hall(
+                    self.project.hall_length, self.project.hall_width
+                ):
+                    self._commit_change(
+                        self._tr("Resize marker"), before,
+                        (f"planning:{self.selected_planning.id}", ()), None,
+                    )
+                else:
+                    self._restore_without_signal(
+                        before, (f"planning:{self.selected_planning.id}", ()), None
+                    )
+                    self.selection_changed.emit(self.selected_planning)
+                    self.status_message.emit(self._tr(
+                        "The object would extend beyond the track area."
+                    ))
+                    self.update()
+            return
+        if self._dragging_planning and self.selected_planning:
+            before = self._planning_drag_before
+            self._dragging_planning = False
+            self._planning_drag_before = None
+            self._planning_drag_offset = None
+            self.planning_snap_preview = None
+            if before is not None and self.project != before:
+                if self.selected_planning.fits_hall(
+                    self.project.hall_length, self.project.hall_width
+                ):
+                    self._commit_change(
+                        self._tr("Move marker"), before,
+                        (f"planning:{self.selected_planning.id}", ()), None,
+                    )
+                else:
+                    self._restore_without_signal(
+                        before, (f"planning:{self.selected_planning.id}", ()), None
+                    )
+                    self.selection_changed.emit(self.selected_planning)
+                    self.status_message.emit(self._tr("The object would extend beyond the track area."))
+                    self.update()
+            return
         if self._guide_drag_axis:
             hall = QRectF(self.pan.x(), self.pan.y(), self.project.hall_length * self.scale,
                           self.project.hall_width * self.scale)
@@ -1943,6 +2373,8 @@ class TrackCanvas(QWidget):
         elif event.key() == Qt.Key.Key_Escape:
             if self.measurement.active:
                 self.clear_measurement()
+            elif self.planning_placement:
+                self.cancel_planning_placement()
             elif self.placement:
                 self.cancel_placement()
             else:
@@ -1952,7 +2384,7 @@ class TrackCanvas(QWidget):
             self.delete_selected()
         elif (event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right)
               and event.modifiers() == Qt.KeyboardModifier.NoModifier
-              and self.selected is not None
+              and (self.selected is not None or self.selected_planning is not None)
               and len(self.selected_ids) <= 1):
             # Native key auto-repeat deliberately drives repeated 5° steps
             # until the user releases the arrow key.
@@ -1979,6 +2411,22 @@ class TrackCanvas(QWidget):
     def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802
         # Verhindert einen hängenbleibenden Pan-Modus, wenn Alt+Tab oder ein
         # anderes Fenster den KeyRelease-/MouseRelease-Event übernimmt.
+        if (self._dragging_planning and self.selected_planning
+                and self._planning_drag_before is not None):
+            before = self._planning_drag_before
+            if self.selected_planning.fits_hall(
+                self.project.hall_length, self.project.hall_width
+            ):
+                self._commit_change(
+                    self._tr("Move marker"), before,
+                    (f"planning:{self.selected_planning.id}", ()), None,
+                )
+            else:
+                self._restore_without_signal(
+                    before, (f"planning:{self.selected_planning.id}", ()), None
+                )
+            self._dragging_planning = False
+            self._planning_drag_before = None
         if self._dragging_element and self.selected and self._drag_started and self._drag_before is not None:
             changed_ids = (self.selected_ids | self._drag_joint_followers
                            | set(self._drag_joint_bridges))
@@ -2042,6 +2490,8 @@ class TrackCanvas(QWidget):
         self._drag_joint_bridges.clear()
         self.unsetCursor()
         if self.placement:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.planning_placement:
             self.setCursor(Qt.CursorShape.CrossCursor)
         elif self.measurement.active:
             self.setCursor(Qt.CursorShape.CrossCursor)

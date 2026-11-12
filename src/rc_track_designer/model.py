@@ -224,6 +224,81 @@ class TrackElement:
 
 
 @dataclass
+class PlanningObject:
+    """A persistent non-track planning marker in world-coordinate metres."""
+
+    kind: str
+    center: Point
+    length: float = 2.0
+    width: float = 0.1
+    heading_deg: float = 0.0
+    locked: bool = False
+    id: str = field(default_factory=lambda: str(uuid4()))
+
+    def __post_init__(self) -> None:
+        if self.kind not in {"start_finish", "timing_loop"}:
+            raise ValueError("Unknown planning object type")
+        if self.length <= 0 or self.width <= 0:
+            raise ValueError("Planning object dimensions must be positive")
+        self.heading_deg %= 360
+
+    def moved(self, dx: float, dy: float) -> None:
+        self.center = Point(self.center.x + dx, self.center.y + dy)
+
+    def rotate(self, degrees_value: float) -> None:
+        self.heading_deg = (self.heading_deg + degrees_value) % 360
+
+    def corners(self) -> tuple[Point, Point, Point, Point]:
+        angle = radians(self.heading_deg)
+        along = Point(cos(angle) * self.width / 2, sin(angle) * self.width / 2)
+        across = Point(-sin(angle) * self.length / 2, cos(angle) * self.length / 2)
+        return tuple(
+            Point(self.center.x + sx * along.x + sy * across.x,
+                  self.center.y + sx * along.y + sy * across.y)
+            for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+        )
+
+    @property
+    def endpoints(self) -> tuple[Point, Point]:
+        """Endpoints of the marker's long axis, used as editor snap handles."""
+        angle = radians(self.heading_deg)
+        across = Point(-sin(angle) * self.length / 2,
+                       cos(angle) * self.length / 2)
+        return (
+            Point(self.center.x - across.x, self.center.y - across.y),
+            Point(self.center.x + across.x, self.center.y + across.y),
+        )
+
+    def fits_hall(self, hall_length: float, hall_width: float) -> bool:
+        return all(0 <= point.x <= hall_length and 0 <= point.y <= hall_width
+                   for point in self.corners())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.kind,
+            "center": {"x": self.center.x, "y": self.center.y},
+            "length": self.length,
+            "width": self.width,
+            "heading_deg": self.heading_deg,
+            "locked": self.locked,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PlanningObject":
+        center = data["center"]
+        return cls(
+            kind=str(data["type"]),
+            center=Point(float(center["x"]), float(center["y"])),
+            length=float(data["length"]),
+            width=float(data.get("width", 0.1)),
+            heading_deg=float(data.get("heading_deg", 0.0)),
+            locked=bool(data.get("locked", False)),
+            id=str(data["id"]),
+        )
+
+
+@dataclass
 class TrackProject:
     hall_length: float = 30.0
     hall_width: float = 20.0
@@ -232,6 +307,7 @@ class TrackProject:
     guides_x: list[float] = field(default_factory=list)
     guides_y: list[float] = field(default_factory=list)
     editor_mode: str = "normal"
+    planning_objects: list[PlanningObject] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.editor_mode not in {"normal", "indoor"}:
@@ -243,9 +319,14 @@ class TrackProject:
         if any(not 0 <= value <= self.hall_width for value in self.guides_y):
             raise ValueError("Horizontal guide lies outside the track area")
         self.validate_connections()
+        if len({item.id for item in self.planning_objects}) != len(self.planning_objects):
+            raise ValueError("Planning object IDs must be unique")
 
     def element_by_id(self, element_id: str) -> TrackElement | None:
         return next((item for item in self.elements if item.id == element_id), None)
+
+    def planning_object_by_id(self, object_id: str) -> PlanningObject | None:
+        return next((item for item in self.planning_objects if item.id == object_id), None)
 
     def connector_pose(self, connector: ConnectorRef) -> Pose:
         element = self.element_by_id(connector.element_id)

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .model import ConnectorRef, TrackConnection, TrackElement, TrackProject
+from .model import ConnectorRef, PlanningObject, TrackConnection, TrackElement, TrackProject
 
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 
 def _load_valid_connections(elements: list[TrackElement], raw_connections: list[dict]) -> list[TrackConnection]:
@@ -53,6 +53,7 @@ def save_project(project: TrackProject, path: str | Path) -> None:
         "elements": [element.to_dict() for element in project.elements],
         "connections": [connection.to_dict() for connection in project.connections],
         "guides": {"x": project.guides_x, "y": project.guides_y},
+        "planning_objects": [item.to_dict() for item in project.planning_objects],
     }
     Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -60,13 +61,17 @@ def save_project(project: TrackProject, path: str | Path) -> None:
 def load_project(path: str | Path) -> TrackProject:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     version = data.get("format_version")
-    if data.get("format") != "rc-track-designer" or version not in {1, 2, 3, 4, FORMAT_VERSION}:
+    if data.get("format") != "rc-track-designer" or version not in {1, 2, 3, 4, 5, FORMAT_VERSION}:
         raise ValueError("Nicht unterstütztes Projektformat")
     hall = data["hall"]
     guides = data.get("guides", {})
     elements = [TrackElement.from_dict(item) for item in data.get("elements", [])]
     connections = (_load_valid_connections(elements, data.get("connections", []))
                    if version >= 2 else [])
+    planning_objects = (
+        [PlanningObject.from_dict(item) for item in data.get("planning_objects", [])]
+        if version >= 6 else []
+    )
     return TrackProject(
         float(hall["length"]), float(hall["width"]),
         elements,
@@ -74,4 +79,5 @@ def load_project(path: str | Path) -> TrackProject:
         [float(value) for value in guides.get("x", [])],
         [float(value) for value in guides.get("y", [])],
         str(data.get("editor_mode", "normal")),
+        planning_objects,
     )
