@@ -136,6 +136,9 @@ class MainWindow(QMainWindow):
         self.rotate_right_action = self._action(tr("Rotate 5° right"), lambda: self.canvas.rotate_selected(-5), "Ctrl+Right")
         self.fit_action = self._action(tr("Fit track area"), self.canvas.fit_to_view, "F")
         self.fit_action.setIcon(QIcon(str(Path(__file__).with_name("assets") / "fit_view.svg")))
+        self.measure_action = self._action(tr("Measure"), self.canvas.set_measurement_mode)
+        self.measure_action.setCheckable(True)
+        self.canvas.measurement_mode_changed.connect(self.measure_action.setChecked)
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.dismiss_action = self._action("", self.dismiss_current, "Esc")
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -161,7 +164,7 @@ class MainWindow(QMainWindow):
         self.edit_menu = self.menuBar().addMenu(tr("Edit")); edit = self.edit_menu
         edit.addActions([self.undo_action, self.redo_action]); edit.addSeparator()
         edit.addActions([self.copy_action, self.paste_action]); edit.addSeparator()
-        edit.addAction(self.close_track_action); edit.addSeparator()
+        edit.addActions([self.close_track_action, self.measure_action]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
         self.help_menu = self.menuBar().addMenu(tr("Help"))
@@ -586,7 +589,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app:
             colors = apply_theme(app, self.theme)
-            self.canvas.set_appearance(colors, self.tr_text)
+            self.canvas.set_appearance(colors, self.tr_text, self.translations.language)
 
     def show_settings(self) -> None:
         dialog = SettingsDialog(self.translations, self.theme, self)
@@ -606,7 +609,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.tr_text("Ready — choose an element or click an existing track"), 4000)
 
     def dismiss_current(self) -> None:
-        if self.canvas.placement:
+        if self.canvas.measurement.active:
+            self.canvas.clear_measurement()
+        elif self.canvas.placement:
             self.canvas.cancel_placement()
         else:
             self.canvas.clear_selection()
@@ -722,6 +727,7 @@ class MainWindow(QMainWindow):
             (self.rotate_right_action, "Rotate 5° right"), (self.fit_action, "Fit track area"),
             (self.copy_action, "Copy selection"), (self.paste_action, "Paste"),
             (self.close_track_action, "Close track…"),
+            (self.measure_action, "Measure"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
             (self.license_action, "License"),
             (self.about_action, "About RC Track Designer"),
@@ -770,7 +776,7 @@ class MainWindow(QMainWindow):
         if self.canvas.selected and self.canvas.selected.element_type == "boundary":
             self.property_labels["width"].setText(tr("Boundary width:"))
         self._sync_properties(self.canvas.selected)
-        self.canvas.set_appearance({}, tr)
+        self.canvas.set_appearance({}, tr, self.translations.language)
         self._update_title()
 
     def _project_print_title(self) -> str:

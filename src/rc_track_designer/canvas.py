@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QMenu, QRubberBand, QWidget
 from .commands import ProjectStateCommand
 from .closure import ClosureProposal, propose_closure
 from .model import ConnectorRef, Point, Pose, TrackConnection, TrackElement, TrackProject
+from .measuring import MeasurementState, nearest_geometry_snap
 from .rendering import (
     connection_bridge_polygon,
     element_centerline_path,
@@ -26,6 +27,7 @@ class TrackCanvas(QWidget):
     status_message = Signal(str)
     closure_connectors_changed = Signal(int)
     close_track_requested = Signal()
+    measurement_mode_changed = Signal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -89,10 +91,14 @@ class TrackCanvas(QWidget):
         self.tangent_tolerance_deg = 30.0
         self.indoor_tangent_tolerance_deg = 8.0
         self.snap_preview: tuple[ConnectorRef, ConnectorRef] | None = None
+        self.measurement = MeasurementState()
+        self.measure_snap_distance_px = 14.0
+        self._language = "de"
         self._clipboard_elements: list[TrackElement] = []
         self._clipboard_connections: list[TrackConnection] = []
         self._paste_generation = 0
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
         self.setMinimumSize(640, 400)
 
     def set_project_name(self, name: str) -> None:
@@ -101,6 +107,7 @@ class TrackCanvas(QWidget):
         self.update()
 
     def set_project(self, project: TrackProject) -> None:
+        self.measurement.clear()
         self.project = project
         self.selected = None
         self.selected_ids.clear()
@@ -149,11 +156,111 @@ class TrackCanvas(QWidget):
         self._view_fitted = True
         self.update()
 
-    def set_appearance(self, colors: dict[str, str], translator=None) -> None:
+    def set_appearance(self, colors: dict[str, str], translator=None,
+                       language: str | None = None) -> None:
         self._colors.update(colors)
         if translator:
             self._tr = translator
+        if language:
+            self._language = language
         self.update()
+
+    def set_measurement_mode(self, active: bool) -> None:
+        """Enter or leave the non-destructive temporary measuring tool."""
+        active = bool(active)
+        self.measurement.clear()
+        if self.measurement.active == active:
+            self.update()
+            return
+        self.measurement.active = active
+        self.placement = None
+        self.clear_selection()
+        if active:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.unsetCursor()
+        self.status_message.emit(self._tr(
+            "Click the first measurement point."
+            if active else "Selection mode"
+        ))
+        self.measurement_mode_changed.emit(active)
+        self.update()
+
+    def clear_measurement(self) -> None:
+        self.measurement.clear()
+        if self.measurement.active:
+            self.status_message.emit(self._tr("Click the first measurement point."))
+        self.update()
+
+    def exit_measurement(self) -> None:
+        self.set_measurement_mode(False)
+
+    def _measurement_point(self, screen_point: QPointF) -> Point:
+        world = self.screen_to_world(screen_point)
+        snap = nearest_geometry_snap(
+            self.project,
+            world,
+            self.measure_snap_distance_px / self.scale,
+        )
+        self.measurement.snap_point = snap.point if snap else None
+        return snap.point if snap else world
+
+    def _set_measurement_point(self, screen_point: QPointF) -> None:
+        point = self._measurement_point(screen_point)
+        if self.measurement.start is None:
+            self.measurement.start = point
+            self.measurement.preview = point
+            self.status_message.emit(self._tr("Click the second measurement point."))
+        elif self.measurement.end is None:
+            self.measurement.end = point
+            self.measurement.preview = None
+            self.status_message.emit(self._tr(
+                "Measured distance: {distance} m",
+                distance=self._format_measurement(self.measurement.distance or 0.0),
+            ))
+        self.update()
+
+    def _format_measurement(self, distance: float) -> str:
+        text = f"{distance:.2f}"
+        return text.replace(".", ",") if self._language == "de" else text
+
+    def _draw_measurement(self, painter: QPainter) -> None:
+        if not self.measurement.active:
+            return
+        if self.measurement.snap_point is not None:
+            snap = self.world_to_screen(self.measurement.snap_point)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor("#ffb020"), 2))
+            painter.drawEllipse(snap, 7, 7)
+        if self.measurement.start is None:
+            return
+        target = self.measurement.end or self.measurement.preview
+        start = self.world_to_screen(self.measurement.start)
+        painter.setPen(QPen(QColor("#26c6da"), 2, Qt.PenStyle.SolidLine))
+        painter.setBrush(QColor("#26c6da"))
+        painter.drawEllipse(start, 4, 4)
+        if target is not None:
+            end = self.world_to_screen(target)
+            painter.drawLine(start, end)
+            painter.drawEllipse(end, 4, 4)
+            distance = hypot(target.x - self.measurement.start.x,
+                             target.y - self.measurement.start.y)
+            label_text = f"{self._format_measurement(distance)} m"
+            font = painter.font()
+            font.setPixelSize(13)
+            font.setBold(True)
+            painter.setFont(font)
+            metrics = painter.fontMetrics()
+            midpoint = (start + end) / 2
+            label = QRectF(
+                midpoint.x() - metrics.horizontalAdvance(label_text) / 2 - 5,
+                midpoint.y() - metrics.height() - 7,
+                metrics.horizontalAdvance(label_text) + 10,
+                metrics.height() + 4,
+            )
+            painter.fillRect(label, QColor(20, 24, 28, 220))
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(label, Qt.AlignmentFlag.AlignCenter, label_text)
 
     def world_to_screen(self, p: Point) -> QPointF:
         return QPointF(self.pan.x() + p.x * self.scale,
@@ -164,6 +271,11 @@ class TrackCanvas(QWidget):
                      self.project.hall_width - (p.y() - self.pan.y()) / self.scale)
 
     def set_placement(self, kind: str, angle: float = 0.0) -> None:
+        if self.measurement.active:
+            self.status_message.emit(self._tr(
+                "Clear or exit the measurement before editing elements."
+            ))
+            return
         active_element = (self.project.element_by_id(self.active_connector.element_id)
                           if self.active_connector else None)
         wanted_type = "boundary" if self.project.editor_mode == "indoor" else "track"
@@ -1197,6 +1309,7 @@ class TrackCanvas(QWidget):
             painter.drawLine(pivot + QPointF(-6, 0), pivot + QPointF(6, 0))
             painter.drawLine(pivot + QPointF(0, -6), pivot + QPointF(0, 6))
         self._draw_guides(painter, hall)
+        self._draw_measurement(painter)
         painter.restore()
         painter.setPen(QPen(QColor("#111111"), 2))
         painter.drawRect(hall)
@@ -1225,6 +1338,10 @@ class TrackCanvas(QWidget):
         position = event.position()
         hall = QRectF(self.pan.x(), self.pan.y(), self.project.hall_length * self.scale,
                       self.project.hall_width * self.scale)
+        if self.measurement.active:
+            if hall.contains(position) and self.measurement.end is None:
+                self._set_measurement_point(position)
+            return
         if not self.placement:
             existing_guide = self._guide_at(position)
             if existing_guide:
@@ -1348,6 +1465,9 @@ class TrackCanvas(QWidget):
         self.update()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self.measurement.active:
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             connector = self._connector_at(event.position())
             if connector and self.project.connection_for(connector):
@@ -1515,7 +1635,17 @@ class TrackCanvas(QWidget):
             action.triggered.connect(self.delete_selected)
         return menu
 
+    def _build_measurement_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.addAction(self._tr("Clear measurement"), self.clear_measurement)
+        menu.addAction(self._tr("Exit measurement"), self.exit_measurement)
+        return menu
+
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
+        if self.measurement.active:
+            self._build_measurement_context_menu().exec(event.globalPos())
+            event.accept()
+            return
         connector = self._connector_at(event.pos())
         guide = self._guide_at(QPointF(event.pos()))
         connection = self.project.connection_for(connector) if connector else None
@@ -1549,6 +1679,21 @@ class TrackCanvas(QWidget):
         if self._panning:
             self.pan += QPointF(delta)
             self.update()
+        elif self.measurement.active:
+            if self.measurement.end is None:
+                hall = QRectF(
+                    self.pan.x(), self.pan.y(),
+                    self.project.hall_length * self.scale,
+                    self.project.hall_width * self.scale,
+                )
+                if hall.contains(event.position()):
+                    point = self._measurement_point(event.position())
+                    if self.measurement.start is not None:
+                        self.measurement.preview = point
+                else:
+                    self.measurement.preview = None
+                    self.measurement.snap_point = None
+                self.update()
         elif self._guide_drag_axis:
             world = self.screen_to_world(event.position())
             if self._guide_drag_axis == "x":
@@ -1786,6 +1931,8 @@ class TrackCanvas(QWidget):
         self.unsetCursor()
         if self.placement:
             self.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.measurement.active:
+            self.setCursor(Qt.CursorShape.CrossCursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Space:
@@ -1794,7 +1941,9 @@ class TrackCanvas(QWidget):
                 self.setCursor(Qt.CursorShape.OpenHandCursor)
             event.accept()
         elif event.key() == Qt.Key.Key_Escape:
-            if self.placement:
+            if self.measurement.active:
+                self.clear_measurement()
+            elif self.placement:
                 self.cancel_placement()
             else:
                 self.clear_selection()
@@ -1820,6 +1969,8 @@ class TrackCanvas(QWidget):
             if not self._panning:
                 self.unsetCursor()
                 if self.placement:
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                elif self.measurement.active:
                     self.setCursor(Qt.CursorShape.CrossCursor)
             event.accept()
         else:
@@ -1891,6 +2042,8 @@ class TrackCanvas(QWidget):
         self._drag_joint_bridges.clear()
         self.unsetCursor()
         if self.placement:
+            self.setCursor(Qt.CursorShape.CrossCursor)
+        elif self.measurement.active:
             self.setCursor(Qt.CursorShape.CrossCursor)
         super().focusOutEvent(event)
 
