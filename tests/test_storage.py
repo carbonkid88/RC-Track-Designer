@@ -13,7 +13,7 @@ def test_project_roundtrip(tmp_path):
     assert load_project(target) == project
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["app_version"] == "0.4.0-beta.2"
-    assert data["format_version"] == 5
+    assert data["format_version"] == 6
     assert data["guides"] == {"x": [3.5, 12.0], "y": [4.5]}
 
 def test_v1_project_without_connections_remains_loadable(tmp_path):

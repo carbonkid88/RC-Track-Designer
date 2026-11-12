@@ -5,8 +5,10 @@ from __future__ import annotations
 from importlib.metadata import files as distribution_files
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence, QPixmap
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import (
+    QAction, QActionGroup, QCloseEvent, QDesktopServices, QIcon, QKeySequence, QPixmap,
+)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 from PySide6.QtWidgets import (
     QAbstractSpinBox, QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
@@ -17,7 +19,7 @@ from PySide6.QtWidgets import (
 from . import __release_name__
 from .canvas import TrackCanvas
 from .i18n import TranslationManager
-from .model import TrackElement, TrackProject
+from .model import PlanningObject, TrackElement, TrackProject
 from .printing import (
     LayoutPrintPreviewDialog,
     PrintOptions,
@@ -139,12 +141,28 @@ class MainWindow(QMainWindow):
         self.measure_action = self._action(tr("Measure"), self.canvas.set_measurement_mode)
         self.measure_action.setCheckable(True)
         self.canvas.measurement_mode_changed.connect(self.measure_action.setChecked)
+        self.start_finish_action = self._action(
+            tr("Start/finish line"),
+            lambda: self.canvas.set_planning_placement(
+                "start_finish", self._planning_default_length()
+            ),
+        )
+        self.timing_loop_action = self._action(
+            tr("Timing loop"),
+            lambda: self.canvas.set_planning_placement(
+                "timing_loop", self._planning_default_length()
+            ),
+        )
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.dismiss_action = self._action("", self.dismiss_current, "Esc")
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.addAction(self.dismiss_action)
         self.guide_action = self._action(tr("User guide"), self.show_user_guide, "F1")
         self.license_action = self._action(tr("License"), self.show_license)
+        self.feedback_action = self._action(
+            "Feedback: rctrackdesigner@web.de",
+            lambda: QDesktopServices.openUrl(QUrl("mailto:rctrackdesigner@web.de")),
+        )
         self.about_action = self._action(tr("About RC Track Designer"), self.about)
         self.undo_action = self.canvas.undo_stack.createUndoAction(self, tr("Undo")); self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self.redo_action = self.canvas.undo_stack.createRedoAction(self, tr("Redo")); self.redo_action.setShortcut("Ctrl+Y")
@@ -164,12 +182,18 @@ class MainWindow(QMainWindow):
         self.edit_menu = self.menuBar().addMenu(tr("Edit")); edit = self.edit_menu
         edit.addActions([self.undo_action, self.redo_action]); edit.addSeparator()
         edit.addActions([self.copy_action, self.paste_action]); edit.addSeparator()
-        edit.addActions([self.close_track_action, self.measure_action]); edit.addSeparator()
+        edit.addActions([
+            self.close_track_action,
+            self.measure_action,
+            self.start_finish_action,
+            self.timing_loop_action,
+        ]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
         self.help_menu = self.menuBar().addMenu(tr("Help"))
         self.help_menu.addAction(self.guide_action)
         self.help_menu.addAction(self.license_action)
+        self.help_menu.addAction(self.feedback_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
@@ -285,6 +309,26 @@ class MainWindow(QMainWindow):
             element_row.addWidget(button)
         element_row.addStretch()
         palette_layout.addLayout(element_row)
+        planning_row = QHBoxLayout()
+        planning_row.setContentsMargins(0, 0, 0, 0)
+        planning_row.setSpacing(3)
+        self.planning_label = QLabel(f" {tr('Markers:')} ")
+        self.planning_label.setFixedWidth(105)
+        planning_row.addWidget(self.planning_label)
+        self.start_finish_button = QToolButton()
+        self.start_finish_button.setDefaultAction(self.start_finish_action)
+        self.start_finish_button.setMinimumWidth(110)
+        planning_row.addWidget(self.start_finish_button)
+        self.timing_loop_button = QToolButton()
+        self.timing_loop_button.setDefaultAction(self.timing_loop_action)
+        self.timing_loop_button.setMinimumWidth(100)
+        planning_row.addWidget(self.timing_loop_button)
+        self.measure_palette_button = QToolButton()
+        self.measure_palette_button.setDefaultAction(self.measure_action)
+        self.measure_palette_button.setMinimumWidth(85)
+        planning_row.addWidget(self.measure_palette_button)
+        planning_row.addStretch()
+        palette_layout.addLayout(planning_row)
         palette.addWidget(palette_widget)
         palette.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.logo_panel = QFrame(self)
@@ -381,6 +425,11 @@ class MainWindow(QMainWindow):
 
     def _property_changed(self, name: str, value: float) -> None:
         element = self.canvas.selected
+        if self.canvas.selected_planning:
+            if name in {"x", "y", "heading_deg", "length"}:
+                self.canvas.change_selected(self.tr_text("Change marker properties"),
+                                            **{name: value})
+            return
         if name == "width" and element and element.element_type == "boundary":
             allowed = (5.0, 10.0, 15.0, 20.0, 25.0)
             value = min(allowed, key=lambda item: abs(item - value)) / 100.0
@@ -389,7 +438,7 @@ class MainWindow(QMainWindow):
             values["radius"] = max(element.radius, value / 2)
         self.canvas.change_selected(self.tr_text("Change properties"), **values)
 
-    def _sync_properties(self, element: TrackElement | None) -> None:
+    def _sync_properties(self, element: TrackElement | PlanningObject | None) -> None:
         panel = self.properties_dock.widget(); panel.setEnabled(element is not None)
         if not element:
             self.element_type_value.setText("—")
@@ -399,7 +448,31 @@ class MainWindow(QMainWindow):
             angle_spin.blockSignals(False)
             self.property_spins["radius"].setMinimum(0.1)
             return
+        if isinstance(element, PlanningObject):
+            self.element_type_value.setText(self.tr_text(
+                "Start/finish line" if element.kind == "start_finish" else "Timing loop"
+            ))
+            values = {
+                "angle_deg": 0.0,
+                "x": element.center.x,
+                "y": element.center.y,
+                "heading_deg": element.heading_deg,
+                "width": element.width,
+                "length": element.length,
+                "radius": 0.1,
+            }
+            for name, spin in self.property_spins.items():
+                spin.blockSignals(True)
+                spin.setValue(values[name])
+                spin.blockSignals(False)
+                spin.setEnabled(
+                    not element.locked and name in {"x", "y", "heading_deg", "length"}
+                )
+            self.property_labels["width"].setText(self.tr_text("Marker width:"))
+            return
         width_spin = self.property_spins["width"]
+        for name in ("x", "y", "width"):
+            self.property_spins[name].setEnabled(True)
         width_spin.blockSignals(True)
         if element.element_type == "boundary":
             width_spin.setRange(5, 25); width_spin.setSingleStep(5)
@@ -431,13 +504,13 @@ class MainWindow(QMainWindow):
         self.property_spins["radius"].setEnabled(is_curve)
         self.property_spins["angle_deg"].setEnabled(is_curve)
 
-    def _selection_changed(self, element: TrackElement | None) -> None:
+    def _selection_changed(self, element: TrackElement | PlanningObject | None) -> None:
         self.delete_action.setEnabled(element is not None)
-        self.copy_action.setEnabled(element is not None)
+        self.copy_action.setEnabled(isinstance(element, TrackElement))
         self.rotate_left_action.setEnabled(self.canvas.can_rotate_selected(5))
         self.rotate_right_action.setEnabled(self.canvas.can_rotate_selected(-5))
         expected_type = "boundary" if self.canvas.project.editor_mode == "indoor" else "track"
-        if element and element.element_type == expected_type:
+        if isinstance(element, TrackElement) and element.element_type == expected_type:
             width_value = element.width * 100 if element.element_type == "boundary" else element.width
             for spin, value in ((self.width_spin, width_value), (self.length_spin, element.length), (self.radius_spin, element.radius)):
                 spin.blockSignals(True); spin.setValue(value); spin.blockSignals(False)
@@ -461,7 +534,7 @@ class MainWindow(QMainWindow):
             self.radius_spin.setValue(radius)
             self.radius_spin.blockSignals(False)
         self.canvas.default_radius = radius
-        if self.canvas.selected:
+        if isinstance(self.canvas.selected, TrackElement):
             values = {"width": value_metres}
             if self.canvas.selected.kind != "straight":
                 values["radius"] = max(self.canvas.selected.radius, minimum_radius)
@@ -475,10 +548,16 @@ class MainWindow(QMainWindow):
         self.canvas.default_radius = value
         if self.canvas.selected: self.canvas.change_selected(self.tr_text("Change radius"), radius=value)
 
+    def _planning_default_length(self) -> float:
+        return (self.canvas.default_width
+                if self.canvas.project.editor_mode == "normal" else 2.0)
+
     def _hall_length_changed(self, value: float) -> None:
         previous = self.canvas.project.hall_length
         self.canvas.project.hall_length = value
         if (not self.canvas.project.all_elements_fit_hall()
+                or not all(item.fits_hall(value, self.canvas.project.hall_width)
+                           for item in self.canvas.project.planning_objects)
                 or any(guide > value for guide in self.canvas.project.guides_x)):
             self.canvas.project.hall_length = previous
             self.hall_length_spin.blockSignals(True); self.hall_length_spin.setValue(previous); self.hall_length_spin.blockSignals(False)
@@ -491,6 +570,8 @@ class MainWindow(QMainWindow):
         previous = self.canvas.project.hall_width
         self.canvas.project.hall_width = value
         if (not self.canvas.project.all_elements_fit_hall()
+                or not all(item.fits_hall(self.canvas.project.hall_length, value)
+                           for item in self.canvas.project.planning_objects)
                 or any(guide > value for guide in self.canvas.project.guides_y)):
             self.canvas.project.hall_width = previous
             self.hall_width_spin.blockSignals(True); self.hall_width_spin.setValue(previous); self.hall_width_spin.blockSignals(False)
@@ -611,6 +692,8 @@ class MainWindow(QMainWindow):
     def dismiss_current(self) -> None:
         if self.canvas.measurement.active:
             self.canvas.clear_measurement()
+        elif self.canvas.planning_placement:
+            self.canvas.cancel_planning_placement()
         elif self.canvas.placement:
             self.canvas.cancel_placement()
         else:
@@ -728,8 +811,11 @@ class MainWindow(QMainWindow):
             (self.copy_action, "Copy selection"), (self.paste_action, "Paste"),
             (self.close_track_action, "Close track…"),
             (self.measure_action, "Measure"),
+            (self.start_finish_action, "Start/finish line"),
+            (self.timing_loop_action, "Timing loop"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
             (self.license_action, "License"),
+            (self.feedback_action, "Feedback: rctrackdesigner@web.de"),
             (self.about_action, "About RC Track Designer"),
             (self.straight_action, "Straight"), (self.undo_action, "Undo"), (self.redo_action, "Redo"),
         )
@@ -755,6 +841,7 @@ class MainWindow(QMainWindow):
                              (self.view_menu, "Settings"), (self.help_menu, "Help")):
             menu.setTitle(tr(source))
         self.elements_label.setText(f" {tr('Elements:')} ")
+        self.planning_label.setText(f" {tr('Markers:')} ")
         self.length_label.setText(f" {tr('Straight length:')} ")
         self.radius_label.setText(f" {tr('Centerline radius:')} ")
         self.hall_length_label.setText(f" {tr('L:')} ")
@@ -775,7 +862,7 @@ class MainWindow(QMainWindow):
         self._apply_mode_ui()
         if self.canvas.selected and self.canvas.selected.element_type == "boundary":
             self.property_labels["width"].setText(tr("Boundary width:"))
-        self._sync_properties(self.canvas.selected)
+        self._sync_properties(self.canvas.selected_planning or self.canvas.selected)
         self.canvas.set_appearance({}, tr, self.translations.language)
         self._update_title()
 

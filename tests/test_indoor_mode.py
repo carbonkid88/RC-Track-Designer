@@ -232,7 +232,7 @@ def test_current_format_roundtrip_preserves_mode_categories_connections_and_unit
     path = tmp_path / "indoor.rct.json"
     save_project(project, path)
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["format_version"] == FORMAT_VERSION == 5
+    assert raw["format_version"] == FORMAT_VERSION == 6
     loaded = load_project(path)
     assert loaded.editor_mode == "indoor"
     assert [item.element_type for item in loaded.elements] == ["boundary", "boundary"]
