@@ -236,7 +236,7 @@ class PlanningObject:
     id: str = field(default_factory=lambda: str(uuid4()))
 
     def __post_init__(self) -> None:
-        if self.kind not in {"start_finish", "timing_loop"}:
+        if self.kind not in {"start_finish", "timing_loop", "starting_grid"}:
             raise ValueError("Unknown planning object type")
         if self.length <= 0 or self.width <= 0:
             raise ValueError("Planning object dimensions must be positive")
@@ -250,7 +250,9 @@ class PlanningObject:
 
     def corners(self) -> tuple[Point, Point, Point, Point]:
         angle = radians(self.heading_deg)
-        along = Point(cos(angle) * self.width / 2, sin(angle) * self.width / 2)
+        object_width = 0.2 if self.kind == "starting_grid" else self.width
+        along = Point(cos(angle) * object_width / 2,
+                      sin(angle) * object_width / 2)
         across = Point(-sin(angle) * self.length / 2, cos(angle) * self.length / 2)
         return tuple(
             Point(self.center.x + sx * along.x + sy * across.x,
@@ -327,6 +329,11 @@ class TrackProject:
 
     def planning_object_by_id(self, object_id: str) -> PlanningObject | None:
         return next((item for item in self.planning_objects if item.id == object_id), None)
+
+    def starting_grid_number(self, item: PlanningObject) -> int | None:
+        grids = [candidate for candidate in self.planning_objects
+                 if candidate.kind == "starting_grid"]
+        return grids.index(item) + 1 if item in grids else None
 
     def connector_pose(self, connector: ConnectorRef) -> Pose:
         element = self.element_by_id(connector.element_id)

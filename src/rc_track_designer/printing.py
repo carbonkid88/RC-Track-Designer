@@ -272,7 +272,8 @@ def render_project(
             painter.drawPath(element_centerline_path(element, map_point, scale))
     for item in project.planning_objects:
         draw_planning_object(
-            painter, item, map_point, scale, grayscale=options.grayscale
+            painter, item, map_point, scale, grayscale=options.grayscale,
+            number=project.starting_grid_number(item),
         )
     painter.restore()
 

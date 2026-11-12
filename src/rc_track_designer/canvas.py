@@ -322,7 +322,7 @@ class TrackCanvas(QWidget):
         self.update()
 
     def set_planning_placement(self, kind: str, length: float = 2.0) -> None:
-        if kind not in {"start_finish", "timing_loop"}:
+        if kind not in {"start_finish", "timing_loop", "starting_grid"}:
             raise ValueError("Unknown planning object type")
         if self.measurement.active:
             self.exit_measurement()
@@ -394,6 +394,8 @@ class TrackCanvas(QWidget):
         self, position: QPointF,
     ) -> tuple[PlanningObject, int] | None:
         for item in reversed(self.project.planning_objects):
+            if item.kind == "starting_grid":
+                continue
             for index, endpoint in enumerate(item.endpoints):
                 screen = self.world_to_screen(endpoint)
                 if hypot(screen.x() - position.x(), screen.y() - position.y()) <= 8:
@@ -430,6 +432,8 @@ class TrackCanvas(QWidget):
 
     def _snap_planning_to_straight(self, item: PlanningObject) -> bool:
         """Magnetically centre and orient a marker across a nearby straight."""
+        if item.kind == "starting_grid":
+            return False
         best: tuple[float, Point, TrackElement] | None = None
         extra_tolerance = self._current_snap_distance() / self.scale
         for element in self.project.elements:
@@ -764,8 +768,9 @@ class TrackCanvas(QWidget):
                                      excluded: ConnectorRef,
                                      maximum_distance: float | None = None) -> ConnectorRef | None:
         best = None
-        best_distance = (self.connector_hit_distance_px if maximum_distance is None
-                         else maximum_distance)
+        limit = (self.connector_hit_distance_px if maximum_distance is None
+                 else maximum_distance)
+        best_key = (limit, 1)
         for element in self.project.elements:
             if element.id == excluded.element_id:
                 continue
@@ -778,8 +783,10 @@ class TrackCanvas(QWidget):
                     continue
                 screen = self.world_to_screen(element.pose_at(endpoint).point)
                 distance = hypot(screen.x() - pos.x(), screen.y() - pos.y())
-                if distance <= best_distance:
-                    best, best_distance = connector, distance
+                priority = 0 if endpoint.startswith("magnet:") else 1
+                key = (distance, priority)
+                if distance <= limit and key < best_key:
+                    best, best_key = connector, key
         return best
 
     def _append_to_active(self, kind: str, angle: float) -> None:
@@ -901,6 +908,50 @@ class TrackCanvas(QWidget):
                                 best = (score, own, candidate, target)
         return best
 
+    def _find_dual_boundary_snap(self, element: TrackElement):
+        """Find two simultaneous targets for the free ends of a boundary straight."""
+        if element.element_type != "boundary" or element.kind != "straight":
+            return None
+        choices: dict[str, list[tuple[float, ConnectorRef]]] = {
+            "start": [], "end": [],
+        }
+        for endpoint in ("start", "end"):
+            own = ConnectorRef(element.id, endpoint)
+            if not self.project.is_free(own):
+                return None
+            screen = self.world_to_screen(element.pose_at(endpoint).point)
+            for other in self.project.elements:
+                if other.id == element.id or other.element_type != "boundary":
+                    continue
+                for candidate_endpoint in other.connector_names:
+                    candidate = ConnectorRef(other.id, candidate_endpoint)
+                    if not self.project.can_accept_connection(candidate):
+                        continue
+                    target = other.pose_at(candidate_endpoint).point
+                    target_screen = self.world_to_screen(target)
+                    distance = hypot(screen.x() - target_screen.x(),
+                                     screen.y() - target_screen.y())
+                    if distance <= self._current_snap_distance():
+                        priority = 0 if candidate_endpoint.startswith("magnet:") else 1
+                        choices[endpoint].append((distance + priority * 0.001,
+                                                  candidate))
+        best = None
+        for start_score, start_target in choices["start"]:
+            start_point = self.project.connector_pose(start_target).point
+            for end_score, end_target in choices["end"]:
+                if end_target == start_target:
+                    continue
+                end_point = self.project.connector_pose(end_target).point
+                length = hypot(end_point.x - start_point.x,
+                               end_point.y - start_point.y)
+                if not 0.1 <= length <= 200:
+                    continue
+                score = start_score + end_score
+                if best is None or score < best[0]:
+                    best = (score, start_target, end_target,
+                            start_point, end_point)
+        return best
+
     def _snap_group(self) -> bool:
         best = self._find_group_snap()
         if not best:
@@ -944,6 +995,25 @@ class TrackCanvas(QWidget):
         return True
 
     def _snap_element(self, element: TrackElement) -> bool:
+        dual = self._find_dual_boundary_snap(element)
+        if dual:
+            _score, start_target, end_target, start_point, end_point = dual
+            original = deepcopy(element)
+            element.start = start_point
+            element.heading_deg = degrees(atan2(
+                end_point.y - start_point.y, end_point.x - start_point.x
+            )) % 360
+            element.length = hypot(end_point.x - start_point.x,
+                                   end_point.y - start_point.y)
+            element.rotation_reference_deg = element.heading_deg
+            if not self.project.element_fits_hall(element):
+                self._restore_element_geometry(element, original)
+                return False
+            self.project.connect(ConnectorRef(element.id, "start"), start_target)
+            self.project.connect(ConnectorRef(element.id, "end"), end_target)
+            self.active_connector = None
+            self.status_message.emit(self._tr("Element snapped into place."))
+            return True
         best = self._find_snap(element)
         if not best: return False
         _, own, candidate, target = best
@@ -959,6 +1029,27 @@ class TrackCanvas(QWidget):
             return False
         self.project.connect(own, candidate)
         self.active_connector = ConnectorRef(element.id, "end" if own.endpoint == "start" else "start")
+        self.status_message.emit(self._tr("Element snapped into place."))
+        return True
+
+    def _snap_jointed_boundary(self, element: TrackElement) -> bool:
+        """Translate a dragged jointed boundary onto a target without rotating it."""
+        best = self._find_snap(element)
+        if not best:
+            return False
+        _score, own, candidate, target = best
+        source = element.pose_at(own.endpoint).point
+        dx, dy = target.point.x - source.x, target.point.y - source.y
+        moved_dx, moved_dy = self._move_selection_safely(dx, dy)
+        if abs(moved_dx - dx) > 1e-9 or abs(moved_dy - dy) > 1e-9:
+            return False
+        snapped = element.pose_at(own.endpoint).point
+        if hypot(snapped.x - target.point.x, snapped.y - target.point.y) > 1e-6:
+            return False
+        self.project.connect(own, candidate)
+        self.active_connector = ConnectorRef(
+            element.id, "end" if own.endpoint == "start" else "start"
+        )
         self.status_message.emit(self._tr("Element snapped into place."))
         return True
 
@@ -1494,8 +1585,9 @@ class TrackCanvas(QWidget):
             draw_planning_object(
                 painter, item, self.world_to_screen, self.scale,
                 selected=item is self.selected_planning,
+                number=self.project.starting_grid_number(item),
             )
-        if self.selected_planning:
+        if self.selected_planning and self.selected_planning.kind != "starting_grid":
             painter.setPen(QPen(QColor("#101214"), 1))
             painter.setBrush(QColor("#31a8ff"))
             for endpoint in self.selected_planning.endpoints:
@@ -1584,6 +1676,30 @@ class TrackCanvas(QWidget):
             if hall.contains(position):
                 kind, length = self.planning_placement
                 world = self.screen_to_world(position)
+                if kind == "starting_grid":
+                    before = deepcopy(self.project)
+                    before_selection = self._selection_state()
+                    item = PlanningObject(
+                        kind, world, length=0.5, width=0.2,
+                    )
+                    if not item.fits_hall(
+                        self.project.hall_length, self.project.hall_width
+                    ):
+                        self.status_message.emit(self._tr(
+                            "The object would extend beyond the track area."
+                        ))
+                        return
+                    self.project.planning_objects.append(item)
+                    self.selected = None
+                    self.selected_planning = item
+                    self.selected_ids.clear()
+                    self.planning_placement = None
+                    self.unsetCursor()
+                    self._commit_change(
+                        self._tr("Place starting grid position"), before,
+                        before_selection, None,
+                    )
+                    return
                 if self.planning_draft_start is None:
                     straight = self._hit_test(position)
                     if kind == "start_finish" and straight and straight.kind == "straight":
@@ -2172,10 +2288,21 @@ class TrackCanvas(QWidget):
                 self._drag_started = True
             moved_dx, moved_dy = self._move_selection_safely(dx, dy)
             self._forget_resolved_overlaps()
-            candidate = (None if self._drag_joint_followers or self._drag_joint_bridges else
-                         self._find_snap(self.selected)
-                         if len(self.selected_ids) == 1 else self._find_group_snap())
-            self.snap_preview = (candidate[1], candidate[2]) if candidate else None
+            dual_candidate = (self._find_dual_boundary_snap(self.selected)
+                              if len(self.selected_ids) == 1
+                              and not self._drag_joint_followers
+                              and not self._drag_joint_bridges else None)
+            candidate = (self._find_snap(self.selected)
+                         if len(self.selected_ids) == 1 else
+                         None if self._drag_joint_followers or self._drag_joint_bridges
+                         else self._find_group_snap())
+            if dual_candidate:
+                self.snap_preview = (
+                    ConnectorRef(self.selected.id, "start"), dual_candidate[1],
+                    ConnectorRef(self.selected.id, "end"), dual_candidate[2],
+                )
+            else:
+                self.snap_preview = (candidate[1], candidate[2]) if candidate else None
             self.update()
         else:
             w = self.screen_to_world(event.position())
@@ -2343,10 +2470,11 @@ class TrackCanvas(QWidget):
                 self.selection_changed.emit(self.selected); self.update()
                 self.status_message.emit(self._tr("The element would extend beyond the track area."))
             else:
-                if self._drag_joint_followers or self._drag_joint_bridges:
-                    pass
-                elif len(self.selected_ids) == 1:
-                    self._snap_element(self.selected)
+                if len(self.selected_ids) == 1:
+                    if self._drag_joint_followers or self._drag_joint_bridges:
+                        self._snap_jointed_boundary(self.selected)
+                    else:
+                        self._snap_element(self.selected)
                 else:
                     self._snap_group()
                 self._commit_change(self._tr("Move element"), self._drag_before,

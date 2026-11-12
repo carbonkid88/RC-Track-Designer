@@ -153,6 +153,10 @@ class MainWindow(QMainWindow):
                 "timing_loop", self._planning_default_length()
             ),
         )
+        self.starting_grid_action = self._action(
+            tr("Add starting grid position"),
+            lambda: self.canvas.set_planning_placement("starting_grid", 0.5),
+        )
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.dismiss_action = self._action("", self.dismiss_current, "Esc")
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -187,6 +191,7 @@ class MainWindow(QMainWindow):
             self.measure_action,
             self.start_finish_action,
             self.timing_loop_action,
+            self.starting_grid_action,
         ]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
@@ -317,15 +322,19 @@ class MainWindow(QMainWindow):
         planning_row.addWidget(self.planning_label)
         self.start_finish_button = QToolButton()
         self.start_finish_button.setDefaultAction(self.start_finish_action)
-        self.start_finish_button.setMinimumWidth(110)
+        self.start_finish_button.setFixedWidth(110)
         planning_row.addWidget(self.start_finish_button)
         self.timing_loop_button = QToolButton()
         self.timing_loop_button.setDefaultAction(self.timing_loop_action)
-        self.timing_loop_button.setMinimumWidth(100)
+        self.timing_loop_button.setFixedWidth(100)
         planning_row.addWidget(self.timing_loop_button)
+        self.starting_grid_button = QToolButton()
+        self.starting_grid_button.setDefaultAction(self.starting_grid_action)
+        self.starting_grid_button.setFixedWidth(105)
+        planning_row.addWidget(self.starting_grid_button)
         self.measure_palette_button = QToolButton()
         self.measure_palette_button.setDefaultAction(self.measure_action)
-        self.measure_palette_button.setMinimumWidth(85)
+        self.measure_palette_button.setFixedWidth(85)
         planning_row.addWidget(self.measure_palette_button)
         planning_row.addStretch()
         palette_layout.addLayout(planning_row)
@@ -449,9 +458,12 @@ class MainWindow(QMainWindow):
             self.property_spins["radius"].setMinimum(0.1)
             return
         if isinstance(element, PlanningObject):
-            self.element_type_value.setText(self.tr_text(
-                "Start/finish line" if element.kind == "start_finish" else "Timing loop"
-            ))
+            type_source = {
+                "start_finish": "Start/finish line",
+                "timing_loop": "Timing loop",
+                "starting_grid": "Starting grid position",
+            }[element.kind]
+            self.element_type_value.setText(self.tr_text(type_source))
             values = {
                 "angle_deg": 0.0,
                 "x": element.center.x,
@@ -465,9 +477,10 @@ class MainWindow(QMainWindow):
                 spin.blockSignals(True)
                 spin.setValue(values[name])
                 spin.blockSignals(False)
-                spin.setEnabled(
-                    not element.locked and name in {"x", "y", "heading_deg", "length"}
-                )
+                editable = {"x", "y", "heading_deg"}
+                if element.kind != "starting_grid":
+                    editable.add("length")
+                spin.setEnabled(not element.locked and name in editable)
             self.property_labels["width"].setText(self.tr_text("Marker width:"))
             return
         width_spin = self.property_spins["width"]
@@ -813,6 +826,7 @@ class MainWindow(QMainWindow):
             (self.measure_action, "Measure"),
             (self.start_finish_action, "Start/finish line"),
             (self.timing_loop_action, "Timing loop"),
+            (self.starting_grid_action, "Add starting grid position"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
             (self.license_action, "License"),
             (self.feedback_action, "Feedback: rctrackdesigner@web.de"),
