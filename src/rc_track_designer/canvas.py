@@ -14,7 +14,7 @@ from .commands import ProjectStateCommand
 from .closure import ClosureProposal, propose_closure
 from .model import ConnectorRef, PlanningObject, Point, Pose, TrackConnection, TrackElement, TrackProject
 from .measuring import MeasurementState, nearest_geometry_snap
-from .planning import draw_planning_object, planning_hit_test
+from .planning import drivers_stand_handles, draw_planning_object, planning_hit_test
 from .rendering import (
     connection_bridge_polygon,
     element_centerline_path,
@@ -51,6 +51,9 @@ class TrackCanvas(QWidget):
         self._planning_resize_endpoint: int | None = None
         self._planning_resize_fixed: Point | None = None
         self._planning_resize_before = None
+        self._planning_side_handle: str | None = None
+        self._planning_side_fixed: Point | None = None
+        self._planning_side_before = None
         self.default_width = 2.0
         self.default_length = 5.0
         self.default_radius = 5.0
@@ -322,7 +325,7 @@ class TrackCanvas(QWidget):
         self.update()
 
     def set_planning_placement(self, kind: str, length: float = 2.0) -> None:
-        if kind not in {"start_finish", "timing_loop", "starting_grid"}:
+        if kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand"}:
             raise ValueError("Unknown planning object type")
         if self.measurement.active:
             self.exit_measurement()
@@ -394,12 +397,22 @@ class TrackCanvas(QWidget):
         self, position: QPointF,
     ) -> tuple[PlanningObject, int] | None:
         for item in reversed(self.project.planning_objects):
-            if item.kind == "starting_grid":
+            if item.kind in {"starting_grid", "drivers_stand"}:
                 continue
             for index, endpoint in enumerate(item.endpoints):
                 screen = self.world_to_screen(endpoint)
                 if hypot(screen.x() - position.x(), screen.y() - position.y()) <= 8:
                     return item, index
+        return None
+
+    def _drivers_stand_handle_at(self, position: QPointF) -> str | None:
+        item = self.selected_planning
+        if not item or item.kind != "drivers_stand" or item.locked:
+            return None
+        for name, point in drivers_stand_handles(item).items():
+            screen = self.world_to_screen(point)
+            if hypot(screen.x() - position.x(), screen.y() - position.y()) <= 9:
+                return name
         return None
 
     def _planning_snap_point(self, point: Point) -> Point | None:
@@ -432,7 +445,7 @@ class TrackCanvas(QWidget):
 
     def _snap_planning_to_straight(self, item: PlanningObject) -> bool:
         """Magnetically centre and orient a marker across a nearby straight."""
-        if item.kind == "starting_grid":
+        if item.kind in {"starting_grid", "drivers_stand"}:
             return False
         best: tuple[float, Point, TrackElement] | None = None
         extra_tolerance = self._current_snap_distance() / self.scale
@@ -473,8 +486,12 @@ class TrackCanvas(QWidget):
             self._tr("Lock marker" if self.selected_planning.locked else "Unlock marker"),
             before, before_selection, None,
         )
-        if self.selected_planning and self.selected_planning.locked:
+        if (self.selected_planning and self.selected_planning.locked
+                and self.selected_planning.kind != "drivers_stand"):
             self.clear_selection()
+        else:
+            self.selection_changed.emit(self.selected_planning)
+            self.update()
 
     def toggle_closure_connector(self, connector: ConnectorRef) -> None:
         if not self.project.is_free(connector):
@@ -629,6 +646,8 @@ class TrackCanvas(QWidget):
                                     values.get("y", item.center.y))
             if "length" in values:
                 item.length = max(0.1, values["length"])
+            if "width" in values:
+                item.width = max(0.1, values["width"])
             if "heading_deg" in values:
                 item.heading_deg = values["heading_deg"] % 360
             if not item.fits_hall(self.project.hall_length, self.project.hall_width):
@@ -1586,12 +1605,20 @@ class TrackCanvas(QWidget):
                 painter, item, self.world_to_screen, self.scale,
                 selected=item is self.selected_planning,
                 number=self.project.starting_grid_number(item),
+                label=self._tr("Drivers' Stand") if item.kind == "drivers_stand" else None,
             )
-        if self.selected_planning and self.selected_planning.kind != "starting_grid":
+        if self.selected_planning and self.selected_planning.kind not in {"starting_grid", "drivers_stand"}:
             painter.setPen(QPen(QColor("#101214"), 1))
             painter.setBrush(QColor("#31a8ff"))
             for endpoint in self.selected_planning.endpoints:
                 painter.drawEllipse(self.world_to_screen(endpoint), 4, 4)
+        if (self.selected_planning and self.selected_planning.kind == "drivers_stand"
+                and not self.selected_planning.locked):
+            painter.setPen(QPen(QColor("#101214"), 1))
+            painter.setBrush(QColor("#31a8ff"))
+            for point in drivers_stand_handles(self.selected_planning).values():
+                screen = self.world_to_screen(point)
+                painter.drawRect(QRectF(screen.x() - 4, screen.y() - 4, 8, 8))
         if self.snap_preview:
             painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor("#ffad24"), 3))
             for connector in self.snap_preview:
@@ -1676,11 +1703,13 @@ class TrackCanvas(QWidget):
             if hall.contains(position):
                 kind, length = self.planning_placement
                 world = self.screen_to_world(position)
-                if kind == "starting_grid":
+                if kind in {"starting_grid", "drivers_stand"}:
                     before = deepcopy(self.project)
                     before_selection = self._selection_state()
                     item = PlanningObject(
-                        kind, world, length=0.5, width=0.2,
+                        kind, world,
+                        length=4.0 if kind == "drivers_stand" else 0.5,
+                        width=1.0 if kind == "drivers_stand" else 0.2,
                     )
                     if not item.fits_hall(
                         self.project.hall_length, self.project.hall_width
@@ -1696,7 +1725,8 @@ class TrackCanvas(QWidget):
                     self.planning_placement = None
                     self.unsetCursor()
                     self._commit_change(
-                        self._tr("Place starting grid position"), before,
+                        self._tr("Place drivers' stand" if kind == "drivers_stand"
+                                 else "Place starting grid position"), before,
                         before_selection, None,
                     )
                     return
@@ -1754,6 +1784,15 @@ class TrackCanvas(QWidget):
                 self.planning_snap_preview = None
                 self.unsetCursor()
                 self._commit_change(self._tr("Place marker"), before, before_selection, None)
+            return
+        side_handle = self._drivers_stand_handle_at(position)
+        if side_handle and self.selected_planning:
+            handles = drivers_stand_handles(self.selected_planning)
+            opposite = {"left": "right", "right": "left",
+                        "top": "bottom", "bottom": "top"}[side_handle]
+            self._planning_side_handle = side_handle
+            self._planning_side_fixed = handles[opposite]
+            self._planning_side_before = deepcopy(self.project)
             return
         planning_endpoint = self._planning_endpoint_at(position)
         if planning_endpoint:
@@ -2139,6 +2178,35 @@ class TrackCanvas(QWidget):
         if self._panning:
             self.pan += QPointF(delta)
             self.update()
+        elif (self._planning_side_handle and self.selected_planning
+              and self._planning_side_fixed is not None):
+            item = self.selected_planning
+            world = self.screen_to_world(event.position())
+            angle = radians(item.heading_deg)
+            along = Point(cos(angle), sin(angle))
+            across = Point(-sin(angle), cos(angle))
+            fixed = self._planning_side_fixed
+            if self._planning_side_handle == "right":
+                size = (world.x - fixed.x) * along.x + (world.y - fixed.y) * along.y
+                direction = along
+            elif self._planning_side_handle == "left":
+                size = (fixed.x - world.x) * along.x + (fixed.y - world.y) * along.y
+                direction = Point(-along.x, -along.y)
+            elif self._planning_side_handle == "bottom":
+                size = (world.x - fixed.x) * across.x + (world.y - fixed.y) * across.y
+                direction = across
+            else:
+                size = (fixed.x - world.x) * across.x + (fixed.y - world.y) * across.y
+                direction = Point(-across.x, -across.y)
+            if size >= 0.1:
+                item.center = Point(fixed.x + direction.x * size / 2,
+                                    fixed.y + direction.y * size / 2)
+                if self._planning_side_handle in {"left", "right"}:
+                    item.length = size
+                else:
+                    item.width = size
+                self.selection_changed.emit(item)
+                self.update()
         elif (self._planning_resize_endpoint is not None
               and self.selected_planning
               and self._planning_resize_fixed is not None):
@@ -2310,6 +2378,29 @@ class TrackCanvas(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self._panning = False
+        if self._planning_side_handle and self.selected_planning:
+            before = self._planning_side_before
+            self._planning_side_handle = None
+            self._planning_side_fixed = None
+            self._planning_side_before = None
+            if before is not None and self.project != before:
+                if self.selected_planning.fits_hall(
+                    self.project.hall_length, self.project.hall_width
+                ):
+                    self._commit_change(
+                        self._tr("Resize drivers' stand"), before,
+                        (f"planning:{self.selected_planning.id}", ()), None,
+                    )
+                else:
+                    self._restore_without_signal(
+                        before, (f"planning:{self.selected_planning.id}", ()), None
+                    )
+                    self.selection_changed.emit(self.selected_planning)
+                    self.status_message.emit(self._tr(
+                        "The object would extend beyond the track area."
+                    ))
+                    self.update()
+            return
         if self._planning_resize_endpoint is not None and self.selected_planning:
             before = self._planning_resize_before
             self._planning_resize_endpoint = None

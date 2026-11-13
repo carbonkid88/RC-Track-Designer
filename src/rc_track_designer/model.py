@@ -236,7 +236,7 @@ class PlanningObject:
     id: str = field(default_factory=lambda: str(uuid4()))
 
     def __post_init__(self) -> None:
-        if self.kind not in {"start_finish", "timing_loop", "starting_grid"}:
+        if self.kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand"}:
             raise ValueError("Unknown planning object type")
         if self.length <= 0 or self.width <= 0:
             raise ValueError("Planning object dimensions must be positive")
@@ -250,6 +250,16 @@ class PlanningObject:
 
     def corners(self) -> tuple[Point, Point, Point, Point]:
         angle = radians(self.heading_deg)
+        if self.kind == "drivers_stand":
+            along = Point(cos(angle) * self.length / 2,
+                          sin(angle) * self.length / 2)
+            across = Point(-sin(angle) * self.width / 2,
+                           cos(angle) * self.width / 2)
+            return tuple(
+                Point(self.center.x + sx * along.x + sy * across.x,
+                      self.center.y + sx * along.y + sy * across.y)
+                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+            )
         object_width = 0.2 if self.kind == "starting_grid" else self.width
         along = Point(cos(angle) * object_width / 2,
                       sin(angle) * object_width / 2)

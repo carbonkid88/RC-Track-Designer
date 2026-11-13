@@ -33,6 +33,18 @@ def planning_polygon(item: PlanningObject, map_point: PointMapper) -> QPolygonF:
     return QPolygonF([map_point(point) for point in item.corners()])
 
 
+def drivers_stand_handles(item: PlanningObject) -> dict[str, Point]:
+    """Return the four metric side-centre resize handles."""
+    if item.kind != "drivers_stand":
+        return {}
+    return {
+        "left": _world_point(item, -item.length / 2, 0),
+        "right": _world_point(item, item.length / 2, 0),
+        "top": _world_point(item, 0, -item.width / 2),
+        "bottom": _world_point(item, 0, item.width / 2),
+    }
+
+
 def planning_hit_test(
     item: PlanningObject,
     screen_point: QPointF,
@@ -57,11 +69,32 @@ def draw_planning_object(
     selected: bool = False,
     grayscale: bool = False,
     number: int | None = None,
+    label: str | None = None,
 ) -> None:
     """Draw a scale-accurate marker for screen, print or PDF."""
     painter.save()
     polygon = planning_polygon(item, map_point)
-    if item.kind == "starting_grid":
+    if item.kind == "drivers_stand":
+        fill = QColor("#8b949c" if grayscale else "#6f8798")
+        fill.setAlpha(145)
+        border = QColor("#303030" if grayscale else "#304b60")
+        painter.setPen(QPen(border, max(1.0, units_per_metre * 0.025)))
+        painter.setBrush(fill)
+        painter.drawPolygon(polygon)
+        center = map_point(item.center)
+        painter.save()
+        painter.translate(center)
+        painter.rotate(-item.heading_deg)
+        font = QFont(painter.font())
+        font.setBold(True)
+        font.setPixelSize(max(10, min(22, round(units_per_metre * 0.22))))
+        painter.setFont(font)
+        painter.setPen(QColor("#15191d"))
+        text = label or "Drivers' Stand"
+        bounds = painter.fontMetrics().boundingRect(text)
+        painter.drawText(QPointF(-bounds.width() / 2, bounds.height() / 3), text)
+        painter.restore()
+    elif item.kind == "starting_grid":
         line_width = max(1.5, units_per_metre * 0.025)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         left_top = map_point(_world_point(item, -0.1, -0.25))

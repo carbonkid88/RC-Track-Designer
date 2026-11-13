@@ -157,6 +157,10 @@ class MainWindow(QMainWindow):
             tr("Add starting grid position"),
             lambda: self.canvas.set_planning_placement("starting_grid", 0.5),
         )
+        self.drivers_stand_action = self._action(
+            tr("Add drivers' stand"),
+            lambda: self.canvas.set_planning_placement("drivers_stand", 4.0),
+        )
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.dismiss_action = self._action("", self.dismiss_current, "Esc")
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -192,6 +196,7 @@ class MainWindow(QMainWindow):
             self.start_finish_action,
             self.timing_loop_action,
             self.starting_grid_action,
+            self.drivers_stand_action,
         ]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
@@ -332,6 +337,10 @@ class MainWindow(QMainWindow):
         self.starting_grid_button.setDefaultAction(self.starting_grid_action)
         self.starting_grid_button.setFixedWidth(105)
         planning_row.addWidget(self.starting_grid_button)
+        self.drivers_stand_button = QToolButton()
+        self.drivers_stand_button.setDefaultAction(self.drivers_stand_action)
+        self.drivers_stand_button.setFixedWidth(100)
+        planning_row.addWidget(self.drivers_stand_button)
         self.measure_palette_button = QToolButton()
         self.measure_palette_button.setDefaultAction(self.measure_action)
         self.measure_palette_button.setFixedWidth(85)
@@ -435,7 +444,7 @@ class MainWindow(QMainWindow):
     def _property_changed(self, name: str, value: float) -> None:
         element = self.canvas.selected
         if self.canvas.selected_planning:
-            if name in {"x", "y", "heading_deg", "length"}:
+            if name in {"x", "y", "heading_deg", "length", "width"}:
                 self.canvas.change_selected(self.tr_text("Change marker properties"),
                                             **{name: value})
             return
@@ -462,6 +471,7 @@ class MainWindow(QMainWindow):
                 "start_finish": "Start/finish line",
                 "timing_loop": "Timing loop",
                 "starting_grid": "Starting grid position",
+                "drivers_stand": "Drivers' Stand",
             }[element.kind]
             self.element_type_value.setText(self.tr_text(type_source))
             values = {
@@ -474,12 +484,20 @@ class MainWindow(QMainWindow):
                 "radius": 0.1,
             }
             for name, spin in self.property_spins.items():
+                if name in {"length", "width"}:
+                    spin.blockSignals(True)
+                    spin.setRange(0.1, 200)
+                    spin.setSingleStep(0.1)
+                    spin.setDecimals(2)
+                    spin.setSuffix(" m")
                 spin.blockSignals(True)
                 spin.setValue(values[name])
                 spin.blockSignals(False)
                 editable = {"x", "y", "heading_deg"}
                 if element.kind != "starting_grid":
                     editable.add("length")
+                if element.kind == "drivers_stand":
+                    editable.add("width")
                 spin.setEnabled(not element.locked and name in editable)
             self.property_labels["width"].setText(self.tr_text("Marker width:"))
             return
@@ -827,6 +845,7 @@ class MainWindow(QMainWindow):
             (self.start_finish_action, "Start/finish line"),
             (self.timing_loop_action, "Timing loop"),
             (self.starting_grid_action, "Add starting grid position"),
+            (self.drivers_stand_action, "Add drivers' stand"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
             (self.license_action, "License"),
             (self.feedback_action, "Feedback: rctrackdesigner@web.de"),

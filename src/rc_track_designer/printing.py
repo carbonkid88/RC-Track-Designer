@@ -274,6 +274,7 @@ def render_project(
         draw_planning_object(
             painter, item, map_point, scale, grayscale=options.grayscale,
             number=project.starting_grid_number(item),
+            label=tr("Drivers' Stand") if item.kind == "drivers_stand" else None,
         )
     painter.restore()
 
