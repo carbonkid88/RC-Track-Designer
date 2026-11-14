@@ -12,9 +12,17 @@ from PySide6.QtWidgets import QMenu, QRubberBand, QWidget
 
 from .commands import ProjectStateCommand
 from .closure import ClosureProposal, propose_closure
-from .model import ConnectorRef, PlanningObject, Point, Pose, TrackConnection, TrackElement, TrackProject
+from .model import (
+    ConnectorRef, PlanningObject, Point, Pose, RestrictedAttachment,
+    TrackConnection, TrackElement, TrackProject,
+)
 from .measuring import MeasurementState, nearest_geometry_snap
 from .planning import drivers_stand_handles, draw_planning_object, planning_hit_test
+from .restricted import (
+    circle_handle, nearest_polygon_edge, nearest_restricted_contour,
+    local_to_world, polygon_from_world, polygon_world_points,
+    restricted_contour_tangent, restricted_path, valid_polygon, world_to_local,
+)
 from .rendering import (
     connection_bridge_polygon,
     element_centerline_path,
@@ -45,6 +53,12 @@ class TrackCanvas(QWidget):
         self.planning_draft_preview: Point | None = None
         self.planning_draft_axis_deg: float | None = None
         self.planning_snap_preview: Point | None = None
+        self.restricted_polygon_points: list[Point] = []
+        self.restricted_polygon_preview: Point | None = None
+        self._restricted_vertex_index: int | None = None
+        self._restricted_vertex_before = None
+        self._restricted_circle_resize = False
+        self._restricted_circle_before = None
         self._dragging_planning = False
         self._planning_drag_before = None
         self._planning_drag_offset: Point | None = None
@@ -79,6 +93,7 @@ class TrackCanvas(QWidget):
         self._drag_ignored_pairs: set[frozenset[str]] = set()
         self._drag_joint_followers: set[str] = set()
         self._drag_joint_bridges: dict[str, tuple[ConnectorRef, ConnectorRef, Point]] = {}
+        self._restricted_snap_suppressed = False
         self._panning = False
         self._selecting_rect = False
         self._rubber_origin = QPoint()
@@ -101,6 +116,10 @@ class TrackCanvas(QWidget):
         self.closure_connectors: list[ConnectorRef] = []
         self.snap_distance_px = 34.0
         self.indoor_snap_distance_px = 20.0
+        # Restricted-area contours use a deliberately smaller capture radius
+        # than boundary-to-boundary joints. This keeps nearby contours from
+        # pulling a freely moved segment in from an unexpected distance.
+        self.restricted_snap_distance_px = 8.0
         self.connector_hit_distance_px = 10.0
         # A modest angular tolerance makes docking helpful without undoing a
         # deliberate manual rotation from far outside the target tangent.
@@ -136,6 +155,8 @@ class TrackCanvas(QWidget):
         self.planning_draft_preview = None
         self.planning_draft_axis_deg = None
         self.planning_snap_preview = None
+        self.restricted_polygon_points.clear()
+        self.restricted_polygon_preview = None
         self._resize_connector = None
         self._resize_started = False
         self._resize_before = None
@@ -325,7 +346,8 @@ class TrackCanvas(QWidget):
         self.update()
 
     def set_planning_placement(self, kind: str, length: float = 2.0) -> None:
-        if kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand"}:
+        if kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand",
+                        "restricted_rectangle", "restricted_circle", "restricted_polygon"}:
             raise ValueError("Unknown planning object type")
         if self.measurement.active:
             self.exit_measurement()
@@ -339,12 +361,26 @@ class TrackCanvas(QWidget):
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.status_message.emit(self._tr("Click inside the track area to place the marker."))
 
+    def set_restricted_placement(self, shape: str) -> None:
+        if self.project.editor_mode != "indoor":
+            self.status_message.emit(self._tr(
+                "Restricted areas are only available in Indoor mode."
+            ))
+            return
+        if shape not in {"rectangle", "circle", "polygon"}:
+            raise ValueError("Unknown restricted area shape")
+        self.set_planning_placement(f"restricted_{shape}", 2.0)
+        self.restricted_polygon_points.clear()
+        self.restricted_polygon_preview = None
+
     def cancel_planning_placement(self) -> None:
         self.planning_placement = None
         self.planning_draft_start = None
         self.planning_draft_preview = None
         self.planning_draft_axis_deg = None
         self.planning_snap_preview = None
+        self.restricted_polygon_points.clear()
+        self.restricted_polygon_preview = None
         self.unsetCursor()
         self.status_message.emit(self._tr("Selection mode"))
         self.update()
@@ -407,7 +443,8 @@ class TrackCanvas(QWidget):
 
     def _drivers_stand_handle_at(self, position: QPointF) -> str | None:
         item = self.selected_planning
-        if not item or item.kind != "drivers_stand" or item.locked:
+        if (not item or item.kind not in {"drivers_stand", "restricted_rectangle"}
+                or item.locked):
             return None
         for name, point in drivers_stand_handles(item).items():
             screen = self.world_to_screen(point)
@@ -445,7 +482,8 @@ class TrackCanvas(QWidget):
 
     def _snap_planning_to_straight(self, item: PlanningObject) -> bool:
         """Magnetically centre and orient a marker across a nearby straight."""
-        if item.kind in {"starting_grid", "drivers_stand"}:
+        if item.kind in {"starting_grid", "drivers_stand", "restricted_rectangle",
+                         "restricted_circle", "restricted_polygon"}:
             return False
         best: tuple[float, Point, TrackElement] | None = None
         extra_tolerance = self._current_snap_distance() / self.scale
@@ -487,11 +525,45 @@ class TrackCanvas(QWidget):
             before, before_selection, None,
         )
         if (self.selected_planning and self.selected_planning.locked
-                and self.selected_planning.kind != "drivers_stand"):
+                and self.selected_planning.kind not in {
+                    "drivers_stand", "restricted_rectangle", "restricted_circle",
+                    "restricted_polygon",
+                }):
             self.clear_selection()
         else:
             self.selection_changed.emit(self.selected_planning)
             self.update()
+
+    def insert_polygon_vertex(self, edge_index: int, point: Point) -> None:
+        item = self.selected_planning
+        if not item or item.kind != "restricted_polygon" or item.locked:
+            return
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        item.points.insert(edge_index + 1, world_to_local(item, point))
+        self._commit_change(self._tr("Insert polygon vertex"), before,
+                            before_selection, None)
+
+    def remove_polygon_vertex(self, index: int) -> None:
+        item = self.selected_planning
+        if (not item or item.kind != "restricted_polygon" or item.locked
+                or len(item.points) <= 3):
+            self.status_message.emit(self._tr(
+                "A polygon must keep at least three vertices."
+            ))
+            return
+        before = deepcopy(self.project)
+        before_selection = self._selection_state()
+        candidate = list(item.points)
+        candidate.pop(index)
+        if not valid_polygon(candidate):
+            self.status_message.emit(self._tr(
+                "The polygon is invalid or self-intersecting."
+            ))
+            return
+        item.points = candidate
+        self._commit_change(self._tr("Remove polygon vertex"), before,
+                            before_selection, None)
 
     def toggle_closure_connector(self, connector: ConnectorRef) -> None:
         if not self.project.is_free(connector):
@@ -531,11 +603,14 @@ class TrackCanvas(QWidget):
 
     def rotate_selected(self, degrees: float) -> None:
         if self.selected_planning:
-            if self.selected_planning.locked:
+            if (self.selected_planning.locked
+                    or self.selected_planning.kind == "restricted_circle"):
                 return
             before = deepcopy(self.project)
             before_selection = self._selection_state()
             self.selected_planning.rotate(degrees)
+            if self.selected_planning.kind.startswith("restricted_"):
+                self._update_attached_boundaries(self.selected_planning)
             if not self.selected_planning.fits_hall(
                 self.project.hall_length, self.project.hall_width
             ):
@@ -560,7 +635,8 @@ class TrackCanvas(QWidget):
 
     def can_rotate_selected(self, degrees: float) -> bool:
         if self.selected_planning:
-            return not self.selected_planning.locked
+            return (not self.selected_planning.locked
+                    and self.selected_planning.kind != "restricted_circle")
         return bool(self.selected and self.manual_heading_allowed(
             self.selected, self.selected.heading_deg + degrees))
 
@@ -572,7 +648,12 @@ class TrackCanvas(QWidget):
         if self.selected_planning:
             before = deepcopy(self.project)
             before_selection = self._selection_state()
+            removed_id = self.selected_planning.id
             self.project.planning_objects.remove(self.selected_planning)
+            self.project.restricted_attachments = [
+                item for item in self.project.restricted_attachments
+                if item.area_id != removed_id
+            ]
             self.selected_planning = None
             self.selection_changed.emit(None)
             self._commit_change(self._tr("Delete marker"), before, before_selection, None)
@@ -646,13 +727,24 @@ class TrackCanvas(QWidget):
                                     values.get("y", item.center.y))
             if "length" in values:
                 item.length = max(0.1, values["length"])
+                if item.kind == "restricted_circle":
+                    item.width = item.length
             if "width" in values:
                 item.width = max(0.1, values["width"])
             if "heading_deg" in values:
                 item.heading_deg = values["heading_deg"] % 360
+            if item.kind.startswith("restricted_"):
+                self._update_attached_boundaries(item)
             if not item.fits_hall(self.project.hall_length, self.project.hall_width):
                 self._restore_without_signal(before, before_selection, None)
                 self.status_message.emit(self._tr("The object would extend beyond the track area."))
+                return
+            if (item.kind.startswith("restricted_")
+                    and self._restricted_area_crosses_boundaries(item)):
+                self._restore_without_signal(before, before_selection, None)
+                self.status_message.emit(self._tr(
+                    "Restricted areas cannot overlap track boundaries."
+                ))
                 return
             self._commit_change(text, before, before_selection, None)
             return
@@ -698,6 +790,14 @@ class TrackCanvas(QWidget):
             self._restore_without_signal(before, selected_id, before_connector)
             self.selection_changed.emit(self.selected); self.update()
             self.status_message.emit(self._tr("The element would extend beyond the track area."))
+            return
+        if self._boundary_crosses_restricted(self.selected):
+            self._restore_without_signal(before, before_selection, before_connector)
+            self.selection_changed.emit(self.selected)
+            self.update()
+            self.status_message.emit(self._tr(
+                "Track boundaries cannot cross restricted areas."
+            ))
             return
         if fixed_endpoint:
             self.active_connector = ConnectorRef(
@@ -835,6 +935,8 @@ class TrackCanvas(QWidget):
                 )
                 element.align_endpoint(new_endpoint, aligned_target)
                 if not self.project.element_fits_hall(element):
+                    continue
+                if self._boundary_crosses_restricted(element):
                     continue
                 overlaps = sum(
                     1 for other in self.project.elements
@@ -1083,6 +1185,169 @@ class TrackCanvas(QWidget):
             width_adjustment=0.5,
         )
 
+    def _restricted_areas(self) -> list[PlanningObject]:
+        return [item for item in self.project.planning_objects
+                if item.kind.startswith("restricted_")]
+
+    def _boundary_crosses_restricted(self, element: TrackElement) -> bool:
+        if element.element_type != "boundary":
+            return False
+        centerline = self._element_path(element)
+        interior_samples = (0.0001, 0.0005, 0.001, 0.002, 0.005,
+                            *(index / 100 for index in range(1, 100)),
+                            0.995, 0.998, 0.999, 0.9995, 0.9999)
+        for area in self._restricted_areas():
+            area_path = restricted_path(area, self.world_to_screen)
+            touch_fractions = []
+            connector_fractions = {"start": 0.0, "end": 1.0}
+            connector_fractions.update({f"magnet:{name}": fraction
+                                        for name, fraction
+                                        in element.magnet_points.items()})
+            for name, fraction in connector_fractions.items():
+                connector_point = element.pose_at(name).point
+                _nearest, distance = nearest_restricted_contour(
+                    area, connector_point
+                )
+                if distance <= 1e-5:
+                    touch_fractions.append(fraction)
+            # Endpoints may touch the contour. Interior samples may not enter it.
+            if any(
+                area_path.contains(centerline.pointAtPercent(fraction))
+                for fraction in interior_samples
+                if not any(abs(fraction - touch) <= 0.011
+                           for touch in touch_fractions)
+            ):
+                return True
+        return False
+
+    def _restricted_area_crosses_boundaries(self, area: PlanningObject) -> bool:
+        if not area.kind.startswith("restricted_"):
+            return False
+        area_path = restricted_path(area, self.world_to_screen)
+        samples = (0.0, 0.0001, 0.0005, 0.001, 0.002, 0.005,
+                   *(index / 100 for index in range(1, 100)),
+                   0.995, 0.998, 0.999, 0.9995, 0.9999, 1.0)
+        return any(
+            area_path.contains(centerline.pointAtPercent(fraction))
+            for element in self.project.elements
+            if element.element_type == "boundary"
+            for centerline in (self._element_path(element),)
+            for fraction in samples
+        )
+
+    def _restricted_contour_snap(self, point: Point) -> Point | None:
+        tolerance = self.restricted_snap_distance_px / self.scale
+        candidates = [nearest_restricted_contour(area, point)
+                      for area in self._restricted_areas()]
+        candidates = [candidate for candidate in candidates
+                      if candidate[1] <= tolerance]
+        return min(candidates, key=lambda candidate: candidate[1])[0] if candidates else None
+
+    def _snap_boundary_to_restricted(self, element: TrackElement) -> bool:
+        if element.element_type != "boundary" or not self._restricted_areas():
+            return False
+        best = None
+        for endpoint in element.connector_names:
+            source = element.pose_at(endpoint).point
+            for area in self._restricted_areas():
+                target, distance = nearest_restricted_contour(area, source)
+                if distance > self.restricted_snap_distance_px / self.scale:
+                    continue
+                if best is None or distance < best[0]:
+                    best = distance, endpoint, source, target, area
+        if best is None:
+            return False
+        _distance, endpoint, source, target, area = best
+        original = deepcopy(element)
+        if endpoint.startswith("magnet:") and element.kind == "straight":
+            tangent = restricted_contour_tangent(area, target)
+            candidates = (tangent, (tangent + 180) % 360)
+            element.heading_deg = min(
+                candidates,
+                key=lambda heading: self._angle_difference(
+                    heading, element.heading_deg
+                ),
+            )
+            fraction = element.magnet_points[endpoint.split(":", 1)[1]]
+            angle = radians(element.heading_deg)
+            element.start = Point(
+                target.x - cos(angle) * element.length * fraction,
+                target.y - sin(angle) * element.length * fraction,
+            )
+            element.rotation_reference_deg = element.heading_deg
+        else:
+            element.moved(target.x - source.x, target.y - source.y)
+        if self._boundary_crosses_restricted(element):
+            self._restore_element_geometry(element, original)
+            return False
+        connector = ConnectorRef(element.id, endpoint)
+        self.project.restricted_attachments = [
+            item for item in self.project.restricted_attachments
+            if item.connector != connector
+        ]
+        local_point = world_to_local(area, target)
+        if area.kind == "restricted_rectangle":
+            local_point = Point(local_point.x / (area.length / 2),
+                                local_point.y / (area.width / 2))
+        elif area.kind == "restricted_circle":
+            local_point = Point(local_point.x / (area.length / 2),
+                                local_point.y / (area.length / 2))
+        self.project.restricted_attachments.append(RestrictedAttachment(
+            connector, area.id, local_point
+        ))
+        return True
+
+    def _boundary_near_restricted(
+        self, element: TrackElement, distance_px: float,
+    ) -> bool:
+        """Return whether one of an element's connectors is near a contour."""
+        tolerance = distance_px / self.scale
+        return any(
+            nearest_restricted_contour(
+                area, element.pose_at(endpoint).point
+            )[1] <= tolerance
+            for endpoint in element.connector_names
+            for area in self._restricted_areas()
+        )
+
+    def _attachments_for_area(
+        self, area: PlanningObject,
+    ) -> list[RestrictedAttachment]:
+        return [item for item in self.project.restricted_attachments
+                if item.area_id == area.id]
+
+    def _update_attached_boundaries(self, area: PlanningObject) -> None:
+        for attachment in self._attachments_for_area(area):
+            element = self.project.element_by_id(attachment.connector.element_id)
+            if element is None:
+                continue
+            local_point = attachment.local_point
+            if area.kind == "restricted_rectangle":
+                local_point = Point(local_point.x * area.length / 2,
+                                    local_point.y * area.width / 2)
+            elif area.kind == "restricted_circle":
+                local_point = Point(local_point.x * area.length / 2,
+                                    local_point.y * area.length / 2)
+            target = local_to_world(area, local_point)
+            endpoint = attachment.connector.endpoint
+            if element.kind == "straight" and endpoint in {"start", "end"}:
+                other = "end" if endpoint == "start" else "start"
+                fixed = element.pose_at(other).point
+                self._reshape_straight_between_joints(
+                    element, endpoint, target, fixed
+                )
+            else:
+                source = element.pose_at(endpoint).point
+                element.moved(target.x - source.x, target.y - source.y)
+
+    def _detach_restricted_attachments_for_elements(
+        self, element_ids: set[str],
+    ) -> None:
+        self.project.restricted_attachments = [
+            item for item in self.project.restricted_attachments
+            if item.connector.element_id not in element_ids
+        ]
+
     @staticmethod
     def _shapes_overlap(first: QPainterPath, second: QPainterPath) -> bool:
         bounds = first.intersected(second).boundingRect()
@@ -1180,6 +1445,41 @@ class TrackCanvas(QWidget):
                 element, hinge.endpoint, hinge_point, fixed_point
             )
         return dx, dy
+
+    def _move_selection_avoiding_restricted(
+        self, dx: float, dy: float,
+    ) -> tuple[float, float]:
+        """Stop Indoor boundaries at restricted contours during a drag."""
+        changed_ids = (self.selected_ids | self._drag_joint_followers
+                       | set(self._drag_joint_bridges))
+        boundaries = [item for item in self.project.elements
+                      if item.id in changed_ids and item.element_type == "boundary"]
+        if not boundaries or not self._restricted_areas():
+            return self._move_selection_safely(dx, dy)
+        originals = {item.id: deepcopy(item) for item in self.project.elements
+                     if item.id in changed_ids}
+
+        def restore() -> None:
+            for element_id, original in originals.items():
+                element = self.project.element_by_id(element_id)
+                if element is not None:
+                    self._restore_element_geometry(element, original)
+
+        moved = self._move_selection_safely(dx, dy)
+        if not any(self._boundary_crosses_restricted(item) for item in boundaries):
+            return moved
+        restore()
+        low, high = 0.0, 1.0
+        for _ in range(12):
+            middle = (low + high) / 2
+            restore()
+            self._move_selection_safely(dx * middle, dy * middle)
+            if any(self._boundary_crosses_restricted(item) for item in boundaries):
+                high = middle
+            else:
+                low = middle
+        restore()
+        return self._move_selection_safely(dx * low, dy * low)
 
     @staticmethod
     def _reshape_straight_between_joints(element: TrackElement, hinge_endpoint: str,
@@ -1279,15 +1579,21 @@ class TrackCanvas(QWidget):
         fixed_endpoint = "end" if connector.endpoint == "start" else "start"
         fixed_connector = ConnectorRef(element.id, fixed_endpoint)
         fixed_connection = self.project.connection_for(fixed_connector)
+        fixed_restricted_attachment = (
+            self.project.restricted_attachment_for(fixed_connector)
+        )
         freely_resizable_boundary = (element.element_type == "boundary"
                                      and element.kind == "straight")
         if (fixed_connection is None
+                and fixed_restricted_attachment is None
                 and not freely_resizable_boundary):
             return False
         fixed_pose = element.pose_at(fixed_endpoint)
         before = deepcopy(element)
         if element.kind == "straight":
-            if element.element_type == "boundary" and fixed_connection is not None:
+            if (element.element_type == "boundary"
+                    and (fixed_connection is not None
+                         or fixed_restricted_attachment is not None)):
                 # A one-sided connected boundary acts like a telescopic lever:
                 # the connected endpoint is the pivot while the mouse controls
                 # both its heading and its continuously variable length.
@@ -1383,6 +1689,15 @@ class TrackCanvas(QWidget):
             self.status_message.emit(self._tr("Element snapped into place."))
         else:
             self.active_connector = connector
+        if element and self._boundary_crosses_restricted(element):
+            self._restore_without_signal(
+                self._resize_before, self._resize_before_selection,
+                self._resize_before_connector,
+            )
+            self.status_message.emit(self._tr(
+                "Track boundaries cannot cross restricted areas."
+            ))
+            return
         self._commit_change(self._tr("Resize element"), self._resize_before,
                             self._resize_before_selection, self._resize_before_connector)
 
@@ -1612,13 +1927,26 @@ class TrackCanvas(QWidget):
             painter.setBrush(QColor("#31a8ff"))
             for endpoint in self.selected_planning.endpoints:
                 painter.drawEllipse(self.world_to_screen(endpoint), 4, 4)
-        if (self.selected_planning and self.selected_planning.kind == "drivers_stand"
+        if (self.selected_planning
+                and self.selected_planning.kind in {"drivers_stand", "restricted_rectangle"}
                 and not self.selected_planning.locked):
             painter.setPen(QPen(QColor("#101214"), 1))
             painter.setBrush(QColor("#31a8ff"))
             for point in drivers_stand_handles(self.selected_planning).values():
                 screen = self.world_to_screen(point)
                 painter.drawRect(QRectF(screen.x() - 4, screen.y() - 4, 8, 8))
+        if (self.selected_planning and self.selected_planning.kind == "restricted_circle"
+                and not self.selected_planning.locked):
+            screen = self.world_to_screen(circle_handle(self.selected_planning))
+            painter.setPen(QPen(QColor("#101214"), 1))
+            painter.setBrush(QColor("#31a8ff"))
+            painter.drawRect(QRectF(screen.x() - 4, screen.y() - 4, 8, 8))
+        if (self.selected_planning and self.selected_planning.kind == "restricted_polygon"
+                and not self.selected_planning.locked):
+            painter.setPen(QPen(QColor("#101214"), 1))
+            painter.setBrush(QColor("#31a8ff"))
+            for point in polygon_world_points(self.selected_planning):
+                painter.drawEllipse(self.world_to_screen(point), 4, 4)
         if self.snap_preview:
             painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(QColor("#ffad24"), 3))
             for connector in self.snap_preview:
@@ -1635,7 +1963,8 @@ class TrackCanvas(QWidget):
                 point = self.world_to_screen(element.pose_at(endpoint).point)
                 if connector == self.active_connector:
                     color, radius = QColor("#ffad24"), 4.5
-                elif self.project.connection_for(connector):
+                elif (self.project.connection_for(connector)
+                      or self.project.restricted_attachment_for(connector)):
                     color, radius = QColor("#40c463"), 3.5
                 else:
                     color, radius = QColor("#31a8ff"), 3.5
@@ -1666,6 +1995,19 @@ class TrackCanvas(QWidget):
             painter.drawLine(start, end)
             painter.drawEllipse(start, 4, 4)
             painter.drawEllipse(end, 4, 4)
+        if self.planning_placement and self.planning_placement[0] == "restricted_polygon" \
+                and self.restricted_polygon_points:
+            painter.setPen(QPen(QColor("#aeb4ba"), 2, Qt.PenStyle.DashLine))
+            screen_points = [self.world_to_screen(point)
+                             for point in self.restricted_polygon_points]
+            for first, second in zip(screen_points, screen_points[1:]):
+                painter.drawLine(first, second)
+            if self.restricted_polygon_preview is not None:
+                painter.drawLine(screen_points[-1],
+                                 self.world_to_screen(self.restricted_polygon_preview))
+            painter.setBrush(QColor("#31a8ff"))
+            for point in screen_points:
+                painter.drawEllipse(point, 4, 4)
         self._draw_measurement(painter)
         painter.restore()
         painter.setPen(QPen(QColor("#111111"), 2))
@@ -1703,7 +2045,38 @@ class TrackCanvas(QWidget):
             if hall.contains(position):
                 kind, length = self.planning_placement
                 world = self.screen_to_world(position)
-                if kind in {"starting_grid", "drivers_stand"}:
+                if kind == "restricted_polygon":
+                    if (len(self.restricted_polygon_points) >= 3
+                            and hypot(position.x() - self.world_to_screen(
+                                self.restricted_polygon_points[0]).x(),
+                                      position.y() - self.world_to_screen(
+                                self.restricted_polygon_points[0]).y()) <= 10):
+                        if not valid_polygon(self.restricted_polygon_points):
+                            self.status_message.emit(self._tr(
+                                "The polygon is invalid or self-intersecting."
+                            ))
+                            return
+                        before = deepcopy(self.project)
+                        before_selection = self._selection_state()
+                        item = polygon_from_world(self.restricted_polygon_points)
+                        self.project.planning_objects.append(item)
+                        self.selected = None
+                        self.selected_planning = item
+                        self.selected_ids.clear()
+                        self.cancel_planning_placement()
+                        self._commit_change(self._tr("Place restricted polygon"), before,
+                                            before_selection, None)
+                    else:
+                        if not self.restricted_polygon_points or hypot(
+                            world.x - self.restricted_polygon_points[-1].x,
+                            world.y - self.restricted_polygon_points[-1].y,
+                        ) >= 0.05:
+                            self.restricted_polygon_points.append(world)
+                        self.restricted_polygon_preview = world
+                        self.update()
+                    return
+                if kind in {"starting_grid", "drivers_stand", "restricted_rectangle",
+                            "restricted_circle"}:
                     before = deepcopy(self.project)
                     before_selection = self._selection_state()
                     item = PlanningObject(
@@ -1711,6 +2084,10 @@ class TrackCanvas(QWidget):
                         length=4.0 if kind == "drivers_stand" else 0.5,
                         width=1.0 if kind == "drivers_stand" else 0.2,
                     )
+                    if kind == "restricted_rectangle":
+                        item.length, item.width = 4.0, 2.0
+                    elif kind == "restricted_circle":
+                        item.length = item.width = 2.0
                     if not item.fits_hall(
                         self.project.hall_length, self.project.hall_width
                     ):
@@ -1725,7 +2102,8 @@ class TrackCanvas(QWidget):
                     self.planning_placement = None
                     self.unsetCursor()
                     self._commit_change(
-                        self._tr("Place drivers' stand" if kind == "drivers_stand"
+                        self._tr("Place restricted area" if kind.startswith("restricted_")
+                                 else "Place drivers' stand" if kind == "drivers_stand"
                                  else "Place starting grid position"), before,
                         before_selection, None,
                     )
@@ -1785,6 +2163,21 @@ class TrackCanvas(QWidget):
                 self.unsetCursor()
                 self._commit_change(self._tr("Place marker"), before, before_selection, None)
             return
+        if (self.selected_planning and not self.selected_planning.locked
+                and self.selected_planning.kind == "restricted_circle"):
+            handle = self.world_to_screen(circle_handle(self.selected_planning))
+            if hypot(handle.x() - position.x(), handle.y() - position.y()) <= 9:
+                self._restricted_circle_resize = True
+                self._restricted_circle_before = deepcopy(self.project)
+                return
+        if (self.selected_planning and not self.selected_planning.locked
+                and self.selected_planning.kind == "restricted_polygon"):
+            for index, point in enumerate(polygon_world_points(self.selected_planning)):
+                screen = self.world_to_screen(point)
+                if hypot(screen.x() - position.x(), screen.y() - position.y()) <= 9:
+                    self._restricted_vertex_index = index
+                    self._restricted_vertex_before = deepcopy(self.project)
+                    return
         side_handle = self._drivers_stand_handle_at(position)
         if side_handle and self.selected_planning:
             handles = drivers_stand_handles(self.selected_planning)
@@ -1859,8 +2252,17 @@ class TrackCanvas(QWidget):
                 element = TrackElement(element_kind, world, width=self.default_width, length=self.default_length,
                                        radius=self.default_radius, angle_deg=angle or 45.0,
                                        element_type=("boundary" if self.project.editor_mode == "indoor" else "track"))
+                if element.element_type == "boundary":
+                    snapped_start = self._restricted_contour_snap(element.start)
+                    if snapped_start is not None:
+                        element.start = snapped_start
                 if not self.project.element_fits_hall(element):
                     self.status_message.emit(self._tr("The element would extend beyond the track area."))
+                    return
+                if self._boundary_crosses_restricted(element):
+                    self.status_message.emit(self._tr(
+                        "Track boundaries cannot cross restricted areas."
+                    ))
                     return
                 self.project.elements.append(element)
                 self.selected = element; self.selected_ids = {element.id}
@@ -1903,6 +2305,9 @@ class TrackCanvas(QWidget):
                     and connector.endpoint in {"start", "end"}
                     and self.active_connector
                     and (self.project.connection_for(ConnectorRef(element.id, other_endpoint))
+                         or self.project.restricted_attachment_for(
+                             ConnectorRef(element.id, other_endpoint)
+                         )
                          or (element.element_type == "boundary"
                              and element.kind == "straight"))):
                 self._resize_connector = connector
@@ -2137,6 +2542,34 @@ class TrackCanvas(QWidget):
             self.selected_ids.clear()
             self.selection_changed.emit(planning_item)
             menu = QMenu(self)
+            if planning_item.kind == "restricted_polygon" and not planning_item.locked:
+                world = self.screen_to_world(QPointF(event.pos()))
+                vertices = polygon_world_points(planning_item)
+                nearest_vertex = min(
+                    range(len(vertices)),
+                    key=lambda index: hypot(vertices[index].x - world.x,
+                                            vertices[index].y - world.y),
+                )
+                vertex_distance = hypot(vertices[nearest_vertex].x - world.x,
+                                        vertices[nearest_vertex].y - world.y)
+                tolerance = 10 / self.scale
+                if vertex_distance <= tolerance:
+                    action = menu.addAction(self._tr("Remove polygon vertex"))
+                    action.setEnabled(len(vertices) > 3)
+                    action.triggered.connect(
+                        lambda checked=False, index=nearest_vertex:
+                        self.remove_polygon_vertex(index)
+                    )
+                else:
+                    edge = nearest_polygon_edge(planning_item, world)
+                    if edge and edge[2] <= tolerance:
+                        action = menu.addAction(self._tr("Insert polygon vertex"))
+                        action.triggered.connect(
+                            lambda checked=False, index=edge[0], point=edge[1]:
+                            self.insert_polygon_vertex(index, point)
+                        )
+                if menu.actions():
+                    menu.addSeparator()
             menu.addAction(
                 self._tr("Unlock" if planning_item.locked else "Lock"),
                 self.toggle_selected_planning_lock,
@@ -2178,6 +2611,25 @@ class TrackCanvas(QWidget):
         if self._panning:
             self.pan += QPointF(delta)
             self.update()
+        elif self._restricted_circle_resize and self.selected_planning:
+            world = self.screen_to_world(event.position())
+            diameter = 2 * hypot(world.x - self.selected_planning.center.x,
+                                 world.y - self.selected_planning.center.y)
+            if diameter >= 0.1:
+                self.selected_planning.length = self.selected_planning.width = diameter
+                self._update_attached_boundaries(self.selected_planning)
+                self.selection_changed.emit(self.selected_planning)
+                self.update()
+        elif self._restricted_vertex_index is not None and self.selected_planning:
+            world = self.screen_to_world(event.position())
+            self.selected_planning.points[self._restricted_vertex_index] = world_to_local(
+                self.selected_planning, world
+            )
+            self.update()
+        elif (self.planning_placement
+              and self.planning_placement[0] == "restricted_polygon"):
+            self.restricted_polygon_preview = self.screen_to_world(event.position())
+            self.update()
         elif (self._planning_side_handle and self.selected_planning
               and self._planning_side_fixed is not None):
             item = self.selected_planning
@@ -2205,6 +2657,8 @@ class TrackCanvas(QWidget):
                     item.length = size
                 else:
                     item.width = size
+                if item.kind.startswith("restricted_"):
+                    self._update_attached_boundaries(item)
                 self.selection_changed.emit(item)
                 self.update()
         elif (self._planning_resize_endpoint is not None
@@ -2225,9 +2679,49 @@ class TrackCanvas(QWidget):
             if not self.selected_planning.locked:
                 pointer = self.screen_to_world(event.position())
                 offset = self._planning_drag_offset or Point(0, 0)
-                self.selected_planning.center = Point(
+                original_center = self.selected_planning.center
+                target_center = Point(
                     pointer.x + offset.x, pointer.y + offset.y,
                 )
+                attachments = self._attachments_for_area(self.selected_planning)
+                attached_originals = {
+                    attachment.connector.element_id: deepcopy(
+                        self.project.element_by_id(attachment.connector.element_id)
+                    )
+                    for attachment in attachments
+                    if self.project.element_by_id(attachment.connector.element_id)
+                }
+
+                def apply_center(center: Point) -> None:
+                    for element_id, original in attached_originals.items():
+                        element = self.project.element_by_id(element_id)
+                        if element is not None:
+                            self._restore_element_geometry(element, original)
+                    self.selected_planning.center = center
+                    self._update_attached_boundaries(self.selected_planning)
+
+                apply_center(target_center)
+                if (self.selected_planning.kind.startswith("restricted_")
+                        and self._restricted_area_crosses_boundaries(
+                            self.selected_planning)):
+                    dx = target_center.x - original_center.x
+                    dy = target_center.y - original_center.y
+                    low, high = 0.0, 1.0
+                    for _ in range(12):
+                        middle = (low + high) / 2
+                        apply_center(Point(
+                            original_center.x + dx * middle,
+                            original_center.y + dy * middle,
+                        ))
+                        if self._restricted_area_crosses_boundaries(
+                                self.selected_planning):
+                            high = middle
+                        else:
+                            low = middle
+                    apply_center(Point(
+                        original_center.x + dx * low,
+                        original_center.y + dy * low,
+                    ))
                 self._snap_planning_to_straight(self.selected_planning)
                 self.selection_changed.emit(self.selected_planning)
                 self.update()
@@ -2295,11 +2789,18 @@ class TrackCanvas(QWidget):
                 self.update()
         elif self._resize_connector:
             world = self.screen_to_world(event.position())
+            resizing = self.project.element_by_id(self._resize_connector.element_id)
+            if resizing and resizing.element_type == "boundary":
+                world = self._restricted_contour_snap(world) or world
             if not self._resize_started and delta.manhattanLength() > 0:
                 self._resize_started = True
             if self._resize_started:
+                before_step = deepcopy(resizing) if resizing else None
                 self._resize_free_connector_to(self._resize_connector, world)
                 element = self.project.element_by_id(self._resize_connector.element_id)
+                if (element and before_step
+                        and self._boundary_crosses_restricted(element)):
+                    self._restore_element_geometry(element, before_step)
                 direct_target = self._free_connector_at_excluding(
                     event.position(), self._resize_connector,
                     self._current_snap_distance(),
@@ -2315,6 +2816,16 @@ class TrackCanvas(QWidget):
         elif self._dragging_element and self.selected:
             dx, dy = delta.x() / self.scale, -delta.y() / self.scale
             if not self._drag_started and (abs(dx) > 1e-12 or abs(dy) > 1e-12):
+                # An attached connector must first be pulled clearly away
+                # from its contour. Otherwise every tiny mouse movement
+                # would recreate the joint immediately.
+                self._restricted_snap_suppressed = any(
+                    attachment.connector.element_id in self.selected_ids
+                    for attachment in self.project.restricted_attachments
+                )
+                self._detach_restricted_attachments_for_elements(
+                    set(self.selected_ids)
+                )
                 for connection in list(self.project.connections):
                     first_selected = connection.first.element_id in self.selected_ids
                     second_selected = connection.second.element_id in self.selected_ids
@@ -2354,7 +2865,24 @@ class TrackCanvas(QWidget):
                 self._remember_initial_overlaps()
                 self.active_connector = None
                 self._drag_started = True
-            moved_dx, moved_dy = self._move_selection_safely(dx, dy)
+            # A contour joint is released while its element is actively moved
+            # and recreated only when a connector snaps to a contour again.
+            self._detach_restricted_attachments_for_elements(
+                set(self.selected_ids)
+            )
+            moved_dx, moved_dy = self._move_selection_avoiding_restricted(dx, dy)
+            if len(self.selected_ids) == 1:
+                if self._restricted_snap_suppressed:
+                    # The release distance is slightly larger than the
+                    # capture distance. This hysteresis makes detaching easy,
+                    # while a deliberate return can still snap again.
+                    if not self._boundary_near_restricted(self.selected, 12.0):
+                        self._restricted_snap_suppressed = False
+                else:
+                    before_snap = deepcopy(self.selected)
+                    if (self._snap_boundary_to_restricted(self.selected)
+                            and self._boundary_crosses_restricted(self.selected)):
+                        self._restore_element_geometry(self.selected, before_snap)
             self._forget_resolved_overlaps()
             dual_candidate = (self._find_dual_boundary_snap(self.selected)
                               if len(self.selected_ids) == 1
@@ -2378,17 +2906,56 @@ class TrackCanvas(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self._panning = False
+        if self._restricted_circle_resize and self.selected_planning:
+            before = self._restricted_circle_before
+            self._restricted_circle_resize = False
+            self._restricted_circle_before = None
+            if before is not None and self.project != before:
+                if (self.selected_planning.fits_hall(self.project.hall_length,
+                                                     self.project.hall_width)
+                        and not self._restricted_area_crosses_boundaries(
+                            self.selected_planning)):
+                    self._commit_change(self._tr("Resize restricted area"), before,
+                                        (f"planning:{self.selected_planning.id}", ()), None)
+                else:
+                    self._restore_without_signal(before,
+                        (f"planning:{self.selected_planning.id}", ()), None)
+            return
+        if self._restricted_vertex_index is not None and self.selected_planning:
+            before = self._restricted_vertex_before
+            self._restricted_vertex_index = None
+            self._restricted_vertex_before = None
+            local_points = self.selected_planning.points
+            if (before is not None and self.project != before
+                    and valid_polygon(local_points)
+                    and self.selected_planning.fits_hall(self.project.hall_length,
+                                                         self.project.hall_width)
+                    and not self._restricted_area_crosses_boundaries(
+                        self.selected_planning)):
+                self._commit_change(self._tr("Move polygon vertex"), before,
+                                    (f"planning:{self.selected_planning.id}", ()), None)
+            elif before is not None and self.project != before:
+                self._restore_without_signal(before,
+                    (f"planning:{self.selected_planning.id}", ()), None)
+                self.status_message.emit(self._tr(
+                    "The polygon is invalid or self-intersecting."
+                ))
+            return
         if self._planning_side_handle and self.selected_planning:
             before = self._planning_side_before
             self._planning_side_handle = None
             self._planning_side_fixed = None
             self._planning_side_before = None
             if before is not None and self.project != before:
-                if self.selected_planning.fits_hall(
-                    self.project.hall_length, self.project.hall_width
-                ):
+                if (self.selected_planning.fits_hall(
+                        self.project.hall_length, self.project.hall_width)
+                        and not (self.selected_planning.kind.startswith("restricted_")
+                                 and self._restricted_area_crosses_boundaries(
+                                     self.selected_planning))):
                     self._commit_change(
-                        self._tr("Resize drivers' stand"), before,
+                        self._tr("Resize restricted area"
+                                 if self.selected_planning.kind.startswith("restricted_")
+                                 else "Resize drivers' stand"), before,
                         (f"planning:{self.selected_planning.id}", ()), None,
                     )
                 else:
@@ -2408,9 +2975,11 @@ class TrackCanvas(QWidget):
             self._planning_resize_before = None
             self.planning_snap_preview = None
             if before is not None and self.project != before:
-                if self.selected_planning.fits_hall(
-                    self.project.hall_length, self.project.hall_width
-                ):
+                if (self.selected_planning.fits_hall(
+                        self.project.hall_length, self.project.hall_width)
+                        and not (self.selected_planning.kind.startswith("restricted_")
+                                 and self._restricted_area_crosses_boundaries(
+                                     self.selected_planning))):
                     self._commit_change(
                         self._tr("Resize marker"), before,
                         (f"planning:{self.selected_planning.id}", ()), None,
@@ -2568,8 +3137,21 @@ class TrackCanvas(QWidget):
                         self._snap_element(self.selected)
                 else:
                     self._snap_group()
-                self._commit_change(self._tr("Move element"), self._drag_before,
-                                    self._drag_before_selection, self._drag_before_connector)
+                if any(self._boundary_crosses_restricted(element)
+                       for element in self.project.elements
+                       if element.id in changed_ids):
+                    self._restore_without_signal(
+                        self._drag_before, self._drag_before_selection,
+                        self._drag_before_connector,
+                    )
+                    self.selection_changed.emit(self.selected)
+                    self.status_message.emit(self._tr(
+                        "Track boundaries cannot cross restricted areas."
+                    ))
+                    self.update()
+                else:
+                    self._commit_change(self._tr("Move element"), self._drag_before,
+                                        self._drag_before_selection, self._drag_before_connector)
         self.snap_preview = None
         self._dragging_element = False
         self._drag_started = False
@@ -2577,6 +3159,7 @@ class TrackCanvas(QWidget):
         self._drag_ignored_pairs.clear()
         self._drag_joint_followers.clear()
         self._drag_joint_bridges.clear()
+        self._restricted_snap_suppressed = False
         self.unsetCursor()
         if self.placement:
             self.setCursor(Qt.CursorShape.CrossCursor)

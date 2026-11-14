@@ -11,6 +11,7 @@ from PySide6.QtGui import (
 )
 
 from .model import PlanningObject, Point
+from .restricted import draw_restricted_area, restricted_hit_test
 
 
 PointMapper = Callable[[Point], QPointF]
@@ -35,7 +36,7 @@ def planning_polygon(item: PlanningObject, map_point: PointMapper) -> QPolygonF:
 
 def drivers_stand_handles(item: PlanningObject) -> dict[str, Point]:
     """Return the four metric side-centre resize handles."""
-    if item.kind != "drivers_stand":
+    if item.kind not in {"drivers_stand", "restricted_rectangle"}:
         return {}
     return {
         "left": _world_point(item, -item.length / 2, 0),
@@ -51,6 +52,8 @@ def planning_hit_test(
     map_point: PointMapper,
     tolerance_px: float = 5.0,
 ) -> bool:
+    if item.kind.startswith("restricted_"):
+        return restricted_hit_test(item, screen_point, map_point, tolerance_px)
     path = QPainterPath()
     path.addPolygon(planning_polygon(item, map_point))
     if path.contains(screen_point):
@@ -74,6 +77,11 @@ def draw_planning_object(
     """Draw a scale-accurate marker for screen, print or PDF."""
     painter.save()
     polygon = planning_polygon(item, map_point)
+    if item.kind.startswith("restricted_"):
+        draw_restricted_area(painter, item, map_point, units_per_metre,
+                             selected=selected, grayscale=grayscale)
+        painter.restore()
+        return
     if item.kind == "drivers_stand":
         fill = QColor("#8b949c" if grayscale else "#6f8798")
         fill.setAlpha(145)

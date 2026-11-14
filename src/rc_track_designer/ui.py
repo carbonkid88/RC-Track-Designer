@@ -13,7 +13,7 @@ from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 from PySide6.QtWidgets import (
     QAbstractSpinBox, QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QDockWidget, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QTabWidget, QTextBrowser, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QMenu, QMessageBox, QTabWidget, QTextBrowser, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import __release_name__
@@ -161,6 +161,18 @@ class MainWindow(QMainWindow):
             tr("Add drivers' stand"),
             lambda: self.canvas.set_planning_placement("drivers_stand", 4.0),
         )
+        self.restricted_rectangle_action = self._action(
+            tr("Add rectangular restricted area"),
+            lambda: self.canvas.set_restricted_placement("rectangle"),
+        )
+        self.restricted_circle_action = self._action(
+            tr("Add circular restricted area"),
+            lambda: self.canvas.set_restricted_placement("circle"),
+        )
+        self.restricted_polygon_action = self._action(
+            tr("Draw polygon restricted area"),
+            lambda: self.canvas.set_restricted_placement("polygon"),
+        )
         self.settings_action = self._action(tr("Settings…"), self.show_settings, "Ctrl+,")
         self.dismiss_action = self._action("", self.dismiss_current, "Esc")
         self.dismiss_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -197,6 +209,9 @@ class MainWindow(QMainWindow):
             self.timing_loop_action,
             self.starting_grid_action,
             self.drivers_stand_action,
+            self.restricted_rectangle_action,
+            self.restricted_circle_action,
+            self.restricted_polygon_action,
         ]); edit.addSeparator()
         edit.addActions([self.rotate_left_action, self.rotate_right_action, self.delete_action])
         self.view_menu = self.menuBar().addMenu(tr("Settings")); self.view_menu.addAction(self.fit_action); self.view_menu.addAction(self.settings_action)
@@ -331,19 +346,33 @@ class MainWindow(QMainWindow):
         planning_row.addWidget(self.start_finish_button)
         self.timing_loop_button = QToolButton()
         self.timing_loop_button.setDefaultAction(self.timing_loop_action)
-        self.timing_loop_button.setFixedWidth(100)
+        self.timing_loop_button.setFixedWidth(110)
         planning_row.addWidget(self.timing_loop_button)
         self.starting_grid_button = QToolButton()
         self.starting_grid_button.setDefaultAction(self.starting_grid_action)
-        self.starting_grid_button.setFixedWidth(105)
+        self.starting_grid_button.setText(tr("Starting grid positions"))
+        self.starting_grid_button.setFixedWidth(110)
         planning_row.addWidget(self.starting_grid_button)
         self.drivers_stand_button = QToolButton()
         self.drivers_stand_button.setDefaultAction(self.drivers_stand_action)
-        self.drivers_stand_button.setFixedWidth(100)
+        self.drivers_stand_button.setText(tr("Drivers' Stand"))
+        self.drivers_stand_button.setFixedWidth(110)
         planning_row.addWidget(self.drivers_stand_button)
+        self.restricted_areas_button = QToolButton()
+        self.restricted_areas_button.setText(tr("Restricted areas"))
+        self.restricted_areas_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        restricted_menu = QMenu(self.restricted_areas_button)
+        restricted_menu.addActions([
+            self.restricted_rectangle_action,
+            self.restricted_circle_action,
+            self.restricted_polygon_action,
+        ])
+        self.restricted_areas_button.setMenu(restricted_menu)
+        self.restricted_areas_button.setFixedWidth(110)
+        planning_row.addWidget(self.restricted_areas_button)
         self.measure_palette_button = QToolButton()
         self.measure_palette_button.setDefaultAction(self.measure_action)
-        self.measure_palette_button.setFixedWidth(85)
+        self.measure_palette_button.setFixedWidth(110)
         planning_row.addWidget(self.measure_palette_button)
         planning_row.addStretch()
         palette_layout.addLayout(planning_row)
@@ -472,6 +501,9 @@ class MainWindow(QMainWindow):
                 "timing_loop": "Timing loop",
                 "starting_grid": "Starting grid position",
                 "drivers_stand": "Drivers' Stand",
+                "restricted_rectangle": "Rectangular restricted area",
+                "restricted_circle": "Circular restricted area",
+                "restricted_polygon": "Polygon restricted area",
             }[element.kind]
             self.element_type_value.setText(self.tr_text(type_source))
             values = {
@@ -496,12 +528,20 @@ class MainWindow(QMainWindow):
                 editable = {"x", "y", "heading_deg"}
                 if element.kind != "starting_grid":
                     editable.add("length")
-                if element.kind == "drivers_stand":
+                if element.kind in {"drivers_stand", "restricted_rectangle"}:
                     editable.add("width")
+                if element.kind == "restricted_polygon":
+                    editable.discard("length")
+                if element.kind == "restricted_circle":
+                    editable.discard("heading_deg")
                 spin.setEnabled(not element.locked and name in editable)
             self.property_labels["width"].setText(self.tr_text("Marker width:"))
+            self.property_labels["length"].setText(self.tr_text(
+                "Diameter:" if element.kind == "restricted_circle" else "Length:"
+            ))
             return
         width_spin = self.property_spins["width"]
+        self.property_labels["length"].setText(self.tr_text("Length:"))
         for name in ("x", "y", "width"):
             self.property_spins[name].setEnabled(True)
         width_spin.blockSignals(True)
@@ -645,6 +685,15 @@ class MainWindow(QMainWindow):
 
     def _apply_mode_ui(self) -> None:
         indoor = self.canvas.project.editor_mode == "indoor"
+        for action in (self.restricted_rectangle_action, self.restricted_circle_action,
+                       self.restricted_polygon_action):
+            action.setVisible(True)
+            action.setEnabled(indoor)
+        # Keep the toolbar row stable across mode changes. In Normal mode the
+        # button remains visible but disabled because restricted areas are an
+        # Indoor-only planning tool.
+        self.restricted_areas_button.setVisible(True)
+        self.restricted_areas_button.setEnabled(indoor)
         if hasattr(self, "mode_combo"):
             self.mode_combo.blockSignals(True)
             self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(self.canvas.project.editor_mode)))
@@ -846,6 +895,9 @@ class MainWindow(QMainWindow):
             (self.timing_loop_action, "Timing loop"),
             (self.starting_grid_action, "Add starting grid position"),
             (self.drivers_stand_action, "Add drivers' stand"),
+            (self.restricted_rectangle_action, "Add rectangular restricted area"),
+            (self.restricted_circle_action, "Add circular restricted area"),
+            (self.restricted_polygon_action, "Draw polygon restricted area"),
             (self.settings_action, "Settings…"), (self.guide_action, "User guide"),
             (self.license_action, "License"),
             (self.feedback_action, "Feedback: rctrackdesigner@web.de"),
@@ -875,6 +927,9 @@ class MainWindow(QMainWindow):
             menu.setTitle(tr(source))
         self.elements_label.setText(f" {tr('Elements:')} ")
         self.planning_label.setText(f" {tr('Markers:')} ")
+        self.starting_grid_button.setText(tr("Starting grid positions"))
+        self.drivers_stand_button.setText(tr("Drivers' Stand"))
+        self.restricted_areas_button.setText(tr("Restricted areas"))
         self.length_label.setText(f" {tr('Straight length:')} ")
         self.radius_label.setText(f" {tr('Centerline radius:')} ")
         self.hall_length_label.setText(f" {tr('L:')} ")
