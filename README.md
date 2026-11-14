@@ -9,20 +9,20 @@ Neben klassischen Streckenlayouts richtet sich der Editor an Vereine und Fahrer 
 <table>
   <tr>
     <th width="33%">Programmübersicht</th>
-    <th width="33%">Klassischer Modus – fertiges Layout</th>
+    <th width="33%">Streckenmodus – fertiges Layout</th>
     <th width="33%">Hallenmodus – Begrenzungslayout</th>
   </tr>
   <tr>
     <td><img src="docs/screenshots/application-overview.png" alt="RC Track Designer Programmübersicht" width="100%"></td>
-    <td><img src="docs/screenshots/classic-track-mode.png" alt="Klassischer Streckenmodus mit fertigem Streckenlayout" width="100%"></td>
+    <td><img src="docs/screenshots/classic-track-mode.png" alt="Streckenmodus mit fertigem Streckenlayout" width="100%"></td>
     <td><img src="docs/screenshots/indoor-mode.png" alt="Hallenmodus mit fertigem Begrenzungslayout" width="100%"></td>
   </tr>
 </table>
 
-## Klassischer Streckenmodus und Hallenmodus
+## Streckenmodus und Hallenmodus
 
-- **Classic Track Mode (klassischer Streckenmodus):** Im Programm als „Normaler Modus“ bezeichnet. Hier planst du den Fahrbahnverlauf mit gefüllten Geraden und Kurven sowie einstellbarer Fahrbahnbreite.
-- **Indoor Carpet Track Mode (Hallenmodus):** Im Programm als „Hallenmodus“ bezeichnet. Hier planst du die Anordnung der Begrenzungen für temporäre Teppichstrecken. Die Begrenzungen werden als durchgehend gelbe, maßstabsgetreue Geometrie auf anthrazitfarbenem Hallenteppich dargestellt; eine gefüllte Fahrbahn wird nicht automatisch erzeugt.
+- **Streckenmodus (Track Mode):** Hier planst du den Fahrbahnverlauf mit gefüllten Geraden und Kurven sowie einstellbarer Fahrbahnbreite.
+- **Hallenmodus (Carpet Mode):** Hier planst du die Anordnung der Begrenzungen für temporäre Teppichstrecken. Die Begrenzungen werden als durchgehend gelbe, maßstabsgetreue Geometrie auf anthrazitfarbenem Hallenteppich dargestellt; eine gefüllte Fahrbahn wird nicht automatisch erzeugt.
 - Die Moduswahl befindet sich in der Maßleiste. Vor dem Umschalten müssen ungespeicherte Änderungen gespeichert werden; Abbrechen lässt das aktuelle Projekt unverändert. Der gewählte Modus beginnt anschließend mit einem leeren Streckenbereich gleicher Abmessungen.
 - Gerade Begrenzungen verwenden Längen in Metern. Kurven verwenden Mittellinienradius in Metern und Winkel in Grad. Die Begrenzungsbreite wird als 5, 10, 15, 20 oder 25 cm eingegeben; intern werden alle Werte in Meter gespeichert.
 - Begrenzungen dürfen frei stehen, mehrere unabhängige Ketten bilden oder magnetisch verbunden werden. Sie verbinden sich ausschließlich mit anderen Begrenzungen, niemals mit normalen Fahrbahnelementen.
@@ -177,20 +177,20 @@ or a race meeting and dismantled afterwards.
 <table>
   <tr>
     <th width="33%">Application overview</th>
-    <th width="33%">Classic mode – finished layout</th>
-    <th width="33%">Indoor mode – barrier layout</th>
+    <th width="33%">Track Mode – finished layout</th>
+    <th width="33%">Carpet Mode – barrier layout</th>
   </tr>
   <tr>
     <td><img src="docs/screenshots/application-overview.png" alt="RC Track Designer application overview" width="100%"></td>
-    <td><img src="docs/screenshots/classic-track-mode.png" alt="Classic track mode with a finished track layout" width="100%"></td>
-    <td><img src="docs/screenshots/indoor-mode.png" alt="Indoor mode with a finished barrier layout" width="100%"></td>
+    <td><img src="docs/screenshots/classic-track-mode.png" alt="Track Mode with a finished track layout" width="100%"></td>
+    <td><img src="docs/screenshots/indoor-mode.png" alt="Carpet Mode with a finished barrier layout" width="100%"></td>
   </tr>
 </table>
 
-## Classic Track Mode and Indoor Carpet Track Mode
+## Track Mode and Carpet Mode
 
-- **Classic Track Mode** (called `Normal mode` in the application): Plan the driving surface using filled straights and curves with adjustable track width.
-- **Indoor Carpet Track Mode** (called `Indoor mode` in the application): Plan the barrier arrangement for temporary carpet tracks. It uses an anthracite carpet, a subtle white grid, and solid yellow scale-accurate barriers without generating a filled driving surface.
+- **Track Mode:** Plan the driving surface using filled straights and curves with adjustable track width.
+- **Carpet Mode:** Plan the barrier arrangement for temporary carpet tracks. It uses an anthracite carpet, a subtle white grid, and solid yellow scale-accurate barriers without generating a filled driving surface.
 - The mode selector is located in the dimensions toolbar. Unsaved changes must be saved before switching; cancelling keeps the current project unchanged. The selected mode then starts with an empty track area of the same dimensions.
 - Straight barrier length and curve centreline radius are entered in metres; curve angles use degrees. Barrier width is selected as 5, 10, 15, 20, or 25 cm and is always stored internally in metres.
 - Barriers may be freestanding, form multiple independent chains, or snap magnetically. They connect only to other barriers, never to normal track elements.

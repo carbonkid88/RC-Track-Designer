@@ -199,6 +199,7 @@ def test_lock_unlock_delete_and_undo(item):
 
 def test_restricted_tools_are_indoor_only_and_translated():
     window = MainWindow()
+    window.canvas.set_project(TrackProject(editor_mode="normal"))
     window._apply_mode_ui()
     assert not window.restricted_areas_button.isHidden()
     assert not window.restricted_areas_button.isEnabled()

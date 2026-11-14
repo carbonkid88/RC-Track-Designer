@@ -6,8 +6,8 @@
     "Add magnet point": "Add magnet point",
     "Remove magnet point": "Remove magnet point",
     "Move magnet point": "Move magnet point",
-    "Normal mode": "Normal mode",
-    "Indoor mode": "Indoor mode",
+    "Track Mode": "Track Mode",
+    "Carpet Mode": "Carpet Mode",
     "Boundary straight": "Boundary straight",
     "Boundary curve": "Boundary curve",
     "Boundary curves:": "Boundary curves:",
@@ -72,7 +72,7 @@
     "Remove polygon vertex": "Remove polygon vertex",
     "A polygon must keep at least three vertices.": "A polygon must keep at least three vertices.",
     "The polygon is invalid or self-intersecting.": "The polygon is invalid or self-intersecting.",
-    "Restricted areas are only available in Indoor mode.": "Restricted areas are only available in Indoor mode.",
+    "Restricted areas are only available in Carpet Mode.": "Restricted areas are only available in Carpet Mode.",
     "Restricted areas": "Restricted areas",
     "Starting grid positions": "Starting grids",
     "Track boundaries cannot cross restricted areas.": "Track boundaries cannot cross restricted areas.",
@@ -92,6 +92,7 @@
     "Lock": "Lock",
     "Unlock": "Unlock",
     "Change marker properties": "Change marker properties",
-    "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.": "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."
+    "Track Mode creates filled track elements. Carpet Mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.": "Track Mode creates filled track elements. Carpet Mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions.",
+    "In Carpet Mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it.": "In Carpet Mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it."
   }
 }

@@ -779,6 +779,7 @@ def test_mode_switch_starts_empty_area_and_updates_indoor_controls():
     normal_properties_width = window.properties_dock.width()
     road = TrackElement("straight", Point(3, 3))
     window.canvas.set_project(TrackProject(30, 18, elements=[road]))
+    window._apply_mode_ui()
     window.mode_combo.setCurrentIndex(window.mode_combo.findData("indoor"))
     app.processEvents()
     assert window.canvas.project.editor_mode == "indoor"
@@ -790,7 +791,7 @@ def test_mode_switch_starts_empty_area_and_updates_indoor_controls():
     assert window.width_spin.value() == 10
     assert window.property_spins["width"].suffix() == " cm"
     assert window.property_spins["width"].value() == 10
-    assert window.palette_mode_label.text() == window.tr_text("Indoor mode")
+    assert window.palette_mode_label.text() == window.tr_text("Carpet Mode")
     assert window.straight_action.text() == window.tr_text("Straight")
     assert window.curve_label.text().strip() == window.tr_text("Curves:")
     assert all(button.isVisible() for button in window.curve_buttons)
@@ -804,6 +805,7 @@ def test_mode_switch_cancel_keeps_unsaved_project(monkeypatch):
     window = MainWindow()
     road = TrackElement("straight", Point(3, 3))
     window.canvas.set_project(TrackProject(25, 12, [road]))
+    window._apply_mode_ui()
     window.dirty = True
     monkeypatch.setattr(
         QMessageBox, "exec",
@@ -824,6 +826,7 @@ def test_mode_switch_saves_dirty_project_before_opening_empty_mode(monkeypatch):
     window = MainWindow()
     road = TrackElement("straight", Point(3, 3))
     window.canvas.set_project(TrackProject(25, 12, [road]))
+    window._apply_mode_ui()
     window.dirty = True
     saved = []
     monkeypatch.setattr(

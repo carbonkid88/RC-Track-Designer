@@ -7,8 +7,8 @@ Dateinamen vorbereitet:
 | Datei | Inhalt |
 |---|---|
 | `application-overview.png` | Programmübersicht / Application overview |
-| `classic-track-mode.png` | Klassischer Modus mit fertigem Layout / Classic mode with a finished layout |
-| `indoor-mode.png` | Hallenmodus mit Begrenzungslayout / Indoor mode with a barrier layout |
+| `classic-track-mode.png` | Streckenmodus mit fertigem Layout / Track Mode with a finished layout |
+| `indoor-mode.png` | Hallenmodus mit Begrenzungslayout / Carpet Mode with a barrier layout |
 
 Empfehlungen:
 
