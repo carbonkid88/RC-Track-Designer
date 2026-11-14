@@ -233,14 +233,18 @@ class PlanningObject:
     width: float = 0.1
     heading_deg: float = 0.0
     locked: bool = False
+    points: list[Point] = field(default_factory=list)
     id: str = field(default_factory=lambda: str(uuid4()))
 
     def __post_init__(self) -> None:
-        if self.kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand"}:
+        if self.kind not in {"start_finish", "timing_loop", "starting_grid", "drivers_stand",
+                             "restricted_rectangle", "restricted_circle", "restricted_polygon"}:
             raise ValueError("Unknown planning object type")
         if self.length <= 0 or self.width <= 0:
             raise ValueError("Planning object dimensions must be positive")
         self.heading_deg %= 360
+        if self.kind == "restricted_polygon" and len(self.points) < 3:
+            raise ValueError("A restricted polygon needs at least three points")
 
     def moved(self, dx: float, dy: float) -> None:
         self.center = Point(self.center.x + dx, self.center.y + dy)
@@ -250,7 +254,7 @@ class PlanningObject:
 
     def corners(self) -> tuple[Point, Point, Point, Point]:
         angle = radians(self.heading_deg)
-        if self.kind == "drivers_stand":
+        if self.kind in {"drivers_stand", "restricted_rectangle"}:
             along = Point(cos(angle) * self.length / 2,
                           sin(angle) * self.length / 2)
             across = Point(-sin(angle) * self.width / 2,
@@ -282,8 +286,19 @@ class PlanningObject:
         )
 
     def fits_hall(self, hall_length: float, hall_width: float) -> bool:
+        if self.kind == "restricted_circle":
+            radius = self.length / 2
+            return (radius <= self.center.x <= hall_length - radius
+                    and radius <= self.center.y <= hall_width - radius)
+        if self.kind == "restricted_polygon":
+            angle = radians(self.heading_deg)
+            points = [Point(self.center.x + point.x * cos(angle) - point.y * sin(angle),
+                            self.center.y + point.x * sin(angle) + point.y * cos(angle))
+                      for point in self.points]
+        else:
+            points = self.corners()
         return all(0 <= point.x <= hall_length and 0 <= point.y <= hall_width
-                   for point in self.corners())
+                   for point in points)
 
     def to_dict(self) -> dict:
         return {
@@ -294,6 +309,7 @@ class PlanningObject:
             "width": self.width,
             "heading_deg": self.heading_deg,
             "locked": self.locked,
+            "points": [{"x": point.x, "y": point.y} for point in self.points],
         }
 
     @classmethod
@@ -306,8 +322,33 @@ class PlanningObject:
             width=float(data.get("width", 0.1)),
             heading_deg=float(data.get("heading_deg", 0.0)),
             locked=bool(data.get("locked", False)),
+            points=[Point(float(point["x"]), float(point["y"]))
+                    for point in data.get("points", [])],
             id=str(data["id"]),
         )
+
+
+@dataclass(frozen=True)
+class RestrictedAttachment:
+    """Persistent joint between a boundary connector and an area contour."""
+
+    connector: ConnectorRef
+    area_id: str
+    local_point: Point
+
+    def to_dict(self) -> dict:
+        return {
+            "connector": vars(self.connector),
+            "area_id": self.area_id,
+            "local_point": {"x": self.local_point.x, "y": self.local_point.y},
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "RestrictedAttachment":
+        point = data["local_point"]
+        return cls(ConnectorRef(**data["connector"]),
+                   str(data["area_id"]),
+                   Point(float(point["x"]), float(point["y"])))
 
 
 @dataclass
@@ -320,6 +361,7 @@ class TrackProject:
     guides_y: list[float] = field(default_factory=list)
     editor_mode: str = "normal"
     planning_objects: list[PlanningObject] = field(default_factory=list)
+    restricted_attachments: list[RestrictedAttachment] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.editor_mode not in {"normal", "indoor"}:
@@ -333,6 +375,13 @@ class TrackProject:
         self.validate_connections()
         if len({item.id for item in self.planning_objects}) != len(self.planning_objects):
             raise ValueError("Planning object IDs must be unique")
+        element_ids = {item.id for item in self.elements}
+        area_ids = {item.id for item in self.planning_objects
+                    if item.kind.startswith("restricted_")}
+        if any(item.connector.element_id not in element_ids
+               or item.area_id not in area_ids
+               for item in self.restricted_attachments):
+            raise ValueError("Restricted attachment references an unknown object")
 
     def element_by_id(self, element_id: str) -> TrackElement | None:
         return next((item for item in self.elements if item.id == element_id), None)
@@ -352,6 +401,12 @@ class TrackProject:
 
     def connection_for(self, connector: ConnectorRef) -> TrackConnection | None:
         return next((item for item in self.connections if item.contains(connector)), None)
+
+    def restricted_attachment_for(
+        self, connector: ConnectorRef,
+    ) -> RestrictedAttachment | None:
+        return next((item for item in self.restricted_attachments
+                     if item.connector == connector), None)
 
     def connections_for(self, connector: ConnectorRef) -> list[TrackConnection]:
         return [item for item in self.connections if item.contains(connector)]
@@ -436,6 +491,10 @@ class TrackProject:
 
     def remove_element(self, element: TrackElement) -> None:
         self.disconnect_element(element.id)
+        self.restricted_attachments = [
+            item for item in self.restricted_attachments
+            if item.connector.element_id != element.id
+        ]
         self.elements.remove(element)
 
     def validate_connections(self) -> None:

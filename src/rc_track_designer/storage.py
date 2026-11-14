@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .model import ConnectorRef, PlanningObject, TrackConnection, TrackElement, TrackProject
+from .model import (
+    ConnectorRef, PlanningObject, RestrictedAttachment, TrackConnection,
+    TrackElement, TrackProject,
+)
 
 FORMAT_VERSION = 6
 
@@ -54,6 +57,8 @@ def save_project(project: TrackProject, path: str | Path) -> None:
         "connections": [connection.to_dict() for connection in project.connections],
         "guides": {"x": project.guides_x, "y": project.guides_y},
         "planning_objects": [item.to_dict() for item in project.planning_objects],
+        "restricted_attachments": [item.to_dict()
+                                   for item in project.restricted_attachments],
     }
     Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -72,6 +77,18 @@ def load_project(path: str | Path) -> TrackProject:
         [PlanningObject.from_dict(item) for item in data.get("planning_objects", [])]
         if version >= 6 else []
     )
+    element_ids = {item.id for item in elements}
+    area_ids = {item.id for item in planning_objects
+                if item.kind.startswith("restricted_")}
+    restricted_attachments = []
+    for raw in data.get("restricted_attachments", []):
+        try:
+            attachment = RestrictedAttachment.from_dict(raw)
+            if (attachment.connector.element_id in element_ids
+                    and attachment.area_id in area_ids):
+                restricted_attachments.append(attachment)
+        except (KeyError, TypeError, ValueError):
+            continue
     return TrackProject(
         float(hall["length"]), float(hall["width"]),
         elements,
@@ -80,4 +97,5 @@ def load_project(path: str | Path) -> TrackProject:
         [float(value) for value in guides.get("y", [])],
         str(data.get("editor_mode", "normal")),
         planning_objects,
+        restricted_attachments,
     )
