@@ -86,6 +86,9 @@ class MainWindow(QMainWindow):
         self.dirty = False
         self.print_options = PrintOptions()
         self.canvas = TrackCanvas()
+        # Carpet Mode is the application default for a fresh, untitled
+        # workspace. Persisted projects still restore their saved mode.
+        self.canvas.set_project(TrackProject(editor_mode="indoor"))
         self.setCentralWidget(self.canvas)
         self._create_actions()
         self._create_menu()
@@ -240,8 +243,8 @@ class MainWindow(QMainWindow):
         main.addSeparator()
         self.mode_label = QLabel(f" {tr('Editing mode:')} ")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem(tr("Normal mode"), "normal")
-        self.mode_combo.addItem(tr("Indoor mode"), "indoor")
+        self.mode_combo.addItem(tr("Track Mode"), "normal")
+        self.mode_combo.addItem(tr("Carpet Mode"), "indoor")
         self.mode_combo.setMinimumWidth(135)
         self.mode_combo.setCurrentIndex(self.mode_combo.findData(self.canvas.project.editor_mode))
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
@@ -308,7 +311,7 @@ class MainWindow(QMainWindow):
         palette_widget.setObjectName("elementPalette")
         palette_layout = QVBoxLayout(palette_widget)
         palette_layout.setContentsMargins(4, 1, 2, 2); palette_layout.setSpacing(1)
-        self.palette_mode_label = QLabel(tr("Normal mode"))
+        self.palette_mode_label = QLabel(tr("Carpet Mode"))
         self.palette_mode_label.setObjectName("paletteModeLabel")
         self.palette_mode_label.setFixedHeight(18)
         palette_layout.addWidget(self.palette_mode_label)
@@ -689,16 +692,16 @@ class MainWindow(QMainWindow):
                        self.restricted_polygon_action):
             action.setVisible(True)
             action.setEnabled(indoor)
-        # Keep the toolbar row stable across mode changes. In Normal mode the
-        # button remains visible but disabled because restricted areas are an
-        # Indoor-only planning tool.
+        # Keep the toolbar row stable across mode changes. In Track Mode the
+        # button remains visible but disabled because restricted areas are a
+        # Carpet Mode-only planning tool.
         self.restricted_areas_button.setVisible(True)
         self.restricted_areas_button.setEnabled(indoor)
         if hasattr(self, "mode_combo"):
             self.mode_combo.blockSignals(True)
             self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(self.canvas.project.editor_mode)))
             self.mode_combo.blockSignals(False)
-        self.palette_mode_label.setText(self.tr_text("Indoor mode" if indoor else "Normal mode"))
+        self.palette_mode_label.setText(self.tr_text("Carpet Mode" if indoor else "Track Mode"))
         self.straight_action.setText(self.tr_text("Straight"))
         self.curve_label.setText(f" {self.tr_text('Curves:')} ")
         self.width_label.setText(f" {self.tr_text('Boundary width:' if indoor else 'Track width:')} ")
@@ -828,8 +831,8 @@ class MainWindow(QMainWindow):
         browser.setOpenExternalLinks(True)
         sections = (
             ("Create a track area", "Create a new project and enter the length and width of the available track area. The internal unit is metres."),
-            ("Choose an editing mode", "Normal mode creates filled track elements. Indoor mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."),
-            ("Add magnet points", "In indoor mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it."),
+            ("Choose an editing mode", "Track Mode creates filled track elements. Carpet Mode replaces the palette with solid yellow barriers on an anthracite carpet. Before switching modes, unsaved work must be saved. The selected mode then starts with an empty track area using the same dimensions."),
+            ("Add magnet points", "In Carpet Mode, right-click a straight barrier to add a magnet point. Multiple straights and curves may meet at every barrier connector, including already connected endpoints. Drag a connected endpoint to move the joint; adjacent elements adjust their geometry while their opposite connectors stay fixed. Added points can be dragged along their straight. Right-click an added magnet point to remove it."),
             ("Place and connect elements", "Choose a straight or neutral curve angle from the upper palette. Click an empty position for a free element, or click a blue free connector to continue the track automatically. Curves rotate through 360 degrees and can snap using either endpoint. Green connectors are connected; the orange connector is active."),
             ("Select and edit", "Click an element to select and drag it. Hold Shift while clicking, or draw a selection rectangle, to select several elements. Use the properties panel for exact dimensions and positions. A selected segment rotates 5 degrees with the Left and Right arrow keys; hold a key down for continuous rotation. Right-click a selected segment to delete the selection. Esc cancels placement or clears the selection."),
             ("Close gaps and move groups", "Drag the free connector of a one-sided connected element to change its length, radius or curve angle. Release it near a compatible connector to close the gap. A selected connected group moves as one rigid unit and can snap to an external free connector."),
@@ -913,8 +916,8 @@ class MainWindow(QMainWindow):
         self.mode_label.setText(f" {tr('Editing mode:')} ")
         current_mode = self.canvas.project.editor_mode
         self.mode_combo.blockSignals(True)
-        self.mode_combo.setItemText(self.mode_combo.findData("normal"), tr("Normal mode"))
-        self.mode_combo.setItemText(self.mode_combo.findData("indoor"), tr("Indoor mode"))
+        self.mode_combo.setItemText(self.mode_combo.findData("normal"), tr("Track Mode"))
+        self.mode_combo.setItemText(self.mode_combo.findData("indoor"), tr("Carpet Mode"))
         self.mode_combo.setCurrentIndex(self.mode_combo.findData(current_mode))
         self.mode_combo.blockSignals(False)
         self.rotate_left_button.setText(tr("5° left"))
@@ -1074,7 +1077,9 @@ class MainWindow(QMainWindow):
         if not self._can_discard(): return
         dialog = NewProjectDialog(self.tr_text, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.canvas.set_project(TrackProject(dialog.length.value(), dialog.width.value()))
+            self.canvas.set_project(TrackProject(
+                dialog.length.value(), dialog.width.value(), editor_mode="indoor"
+            ))
             self._sync_hall_controls()
             self._apply_mode_ui()
             self.current_path = None; self.dirty = False; self._update_title()

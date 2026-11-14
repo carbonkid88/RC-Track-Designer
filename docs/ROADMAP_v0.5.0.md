@@ -8,7 +8,8 @@
 ## Zielsetzung
 
 v0.5.0 erweitert den RC Track Designer um allgemeine Planungs-, Mess- und
-Ausgabefunktionen für den Classic Track Mode und den Indoor Carpet Track Mode.
+Ausgabefunktionen für den Streckenmodus (Track Mode) und den Hallenmodus
+(Carpet Mode).
 Die vorhandene Geometrie, das metrische Weltkoordinatensystem, beide
 Bearbeitungsmodi sowie bestehende Projekte bleiben erhalten.
 
@@ -28,7 +29,8 @@ Trefferprüfung.
   bestehende Übersetzungssystem verwenden.
 - Die Projektformate 1 bis 5 bleiben lesbar. Alte Projekte erhalten beim Laden
   keine erfundenen Planungsobjekte und werden nicht stillschweigend verändert.
-- Light Theme, Dark Theme, Classic Track Mode und Indoor Carpet Track Mode
+- Light Theme, Dark Theme, Streckenmodus (Track Mode) und Hallenmodus
+  (Carpet Mode)
   müssen berücksichtigt werden.
 - Rendering, Hit-Testing und Objektbearbeitung sollen möglichst aus dem bereits
   umfangreichen `TrackCanvas` ausgelagert werden.
@@ -90,7 +92,7 @@ der Projektdatei gespeichert.
 
 **Status: geplant, nicht implementiert**
 
-Sperrflächen stehen im Indoor Carpet Track Mode zur Verfügung. Sie werden
+Sperrflächen stehen im Hallenmodus (Carpet Mode) zur Verfügung. Sie werden
 neutral grau und schraffiert dargestellt.
 
 #### Rechteck
@@ -223,7 +225,7 @@ eingeblendet.
 - normale Auswahl und Bearbeitung anderer Objekte nicht behindern
 - Linie und erforderliche Eingabedaten speichern
 
-#### Classic Track Mode
+#### Streckenmodus (Track Mode)
 
 - Fahrbahnkorridor automatisch aus den vorhandenen Streckenelementen ableiten
 - eine eindeutige zusammenhängende Strecke automatisch erkennen
@@ -233,7 +235,7 @@ eingeblendet.
 - geglättete Linie innerhalb der verfügbaren Fahrbahnbreite berechnen
 - keine manuell gesetzten Führungspunkte
 
-#### Indoor Carpet Track Mode
+#### Hallenmodus (Carpet Mode)
 
 - Führungspunkte durch Mausklicks entlang des gewünschten Verlaufs setzen
 - Führungspunkte definieren nur den Verlauf, nicht die endgültige Linie
@@ -439,8 +441,8 @@ Für jedes Funktionspaket sind automatisierte Tests vorzusehen:
 - lückenlose Startplatznummerierung
 - Glättung, Validität und Längenberechnung der Ideallinie
 
-Zusätzlich bleiben sämtliche bestehenden Tests für Classic Track Mode und
-Indoor Carpet Track Mode verpflichtend grün.
+Zusätzlich bleiben sämtliche bestehenden Tests für Streckenmodus (Track Mode)
+und Hallenmodus (Carpet Mode) verpflichtend grün.
 
 ## Festgelegte technische Entscheidungen
 

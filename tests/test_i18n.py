@@ -34,8 +34,12 @@ def test_german_translation_and_formatting():
     assert manager.tr("Guide: {value} m", value="2.5") == "Hilfslinie: 2.5 m"
     assert manager.tr("Close track…") == "Strecke schließen…"
     assert manager.tr("Track closed successfully.") == "Strecke erfolgreich geschlossen."
+    assert manager.tr("Track Mode") == "Streckenmodus"
+    assert manager.tr("Carpet Mode") == "Hallenmodus"
 
 
 def test_english_source_strings_are_fallback():
     manager = TranslationManager("en")
     assert manager.tr("Unknown source") == "Unknown source"
+    assert manager.tr("Track Mode") == "Track Mode"
+    assert manager.tr("Carpet Mode") == "Carpet Mode"

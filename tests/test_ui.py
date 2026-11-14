@@ -4,10 +4,42 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QApplication, QFormLayout
+from PySide6.QtWidgets import QApplication, QDialog, QFormLayout
 
-from rc_track_designer.model import ConnectorRef, Point, TrackElement
+from rc_track_designer.model import ConnectorRef, Point, TrackElement, TrackProject
 from rc_track_designer.ui import MainWindow
+
+
+def test_fresh_application_uses_carpet_mode_with_localized_names():
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+
+    assert window.canvas.project.editor_mode == "indoor"
+    assert window.mode_combo.currentData() == "indoor"
+    assert window.mode_combo.itemText(window.mode_combo.findData("normal")) == "Streckenmodus"
+    assert window.mode_combo.itemText(window.mode_combo.findData("indoor")) == "Hallenmodus"
+    assert window.palette_mode_label.text() == "Hallenmodus"
+    window.close()
+    app.processEvents()
+
+
+def test_new_project_always_starts_in_carpet_mode(monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    window.canvas.set_project(TrackProject(editor_mode="normal"))
+    window._apply_mode_ui()
+    monkeypatch.setattr(
+        "rc_track_designer.ui.NewProjectDialog.exec",
+        lambda self: QDialog.DialogCode.Accepted,
+    )
+
+    window.new_project()
+
+    assert window.canvas.project.editor_mode == "indoor"
+    assert window.mode_combo.currentData() == "indoor"
+    assert window.canvas.project.elements == []
+    window.close()
+    app.processEvents()
 
 
 def test_logo_is_scaled_and_placed_at_right_end_of_main_toolbar():
@@ -176,6 +208,8 @@ def test_copy_paste_shortcuts_and_half_metre_straight_steps():
 def test_track_width_keeps_curve_radius_above_valid_inner_edge():
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
+    window.canvas.set_project(TrackProject(editor_mode="normal"))
+    window._apply_mode_ui()
 
     window.width_spin.setValue(6)
 

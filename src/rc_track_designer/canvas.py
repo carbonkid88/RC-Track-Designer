@@ -364,7 +364,7 @@ class TrackCanvas(QWidget):
     def set_restricted_placement(self, shape: str) -> None:
         if self.project.editor_mode != "indoor":
             self.status_message.emit(self._tr(
-                "Restricted areas are only available in Indoor mode."
+                "Restricted areas are only available in Carpet Mode."
             ))
             return
         if shape not in {"rectangle", "circle", "polygon"}:

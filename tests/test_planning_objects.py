@@ -459,6 +459,8 @@ def test_selected_marker_exposes_two_endpoint_handles():
 
 def test_default_marker_length_uses_track_width_or_two_metres_indoor():
     window = MainWindow()
+    window.canvas.set_project(TrackProject(editor_mode="normal"))
+    window._apply_mode_ui()
     window.canvas.default_width = 3.25
     window.start_finish_action.trigger()
     assert window.canvas.planning_placement == ("start_finish", 3.25)
